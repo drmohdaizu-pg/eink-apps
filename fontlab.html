@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>E-ink Font Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Sans:wght@400;600;700&family=Inter:wght@400;600;700&family=Lexend:wght@400;600;700&family=Literata:wght@400;600;700&family=Merriweather:wght@400;700&family=Source+Serif+4:wght@400;600;700&family=Noto+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  body { margin:0; font-family: system-ui, sans-serif; background:#f4f1ea; color:#1b1b1b; }
+  header { position:sticky; top:0; background:#fff; border-bottom:1px solid #ddd6c8; padding:12px 20px; display:flex; gap:18px; align-items:center; flex-wrap:wrap; z-index:1; }
+  h1 { font-size:18px; margin:0; }
+  label { font-size:13px; display:flex; gap:6px; align-items:center; }
+  main { padding:16px 20px; display:grid; gap:12px; }
+  .row { background:#fff; border:1px solid #ddd6c8; border-radius:10px; padding:10px 12px; }
+  .row h2 { font-size:14px; margin:0 0 6px; display:flex; justify-content:space-between; }
+  .row h2 span { font-weight:400; color:#6b6b6b; font-size:12px; }
+  canvas { image-rendering: pixelated; display:block; max-width:100%; }
+</style>
+</head>
+<body>
+<header>
+  <h1>E-ink Font Lab</h1>
+  <label>Edge cut-off <input type="range" id="th" min="60" max="230" value="140"> <b id="thv">140</b></label>
+  <label>Weight <select id="wt"><option value="400">Regular</option><option value="600">Semibold</option><option value="700">Bold</option></select></label>
+  <label><input type="checkbox" id="dark"> White on black</label>
+  <label>Zoom <select id="zoom"><option>1</option><option selected>2</option><option>3</option></select></label>
+</header>
+<main id="rows"></main>
+<script>
+// Every sample is drawn, then cut to pure black/white exactly like the e-ink screen.
+const FONTS = [
+  ['Verdana', 'Verdana', 'system · current Note / To-do'],
+  ['Georgia', 'Georgia', 'system · current Quote / Dashboard words'],
+  ['Times New Roman', '"Times New Roman"', 'system · current Dashboard numbers'],
+  ['Tahoma', 'Tahoma', 'system · narrow Verdana'],
+  ['Segoe UI', '"Segoe UI"', 'system · original default'],
+  ['Atkinson Hyperlegible', '"Atkinson Hyperlegible"', 'Google · designed for low vision legibility'],
+  ['Inter', 'Inter', 'Google · screen UI sans'],
+  ['IBM Plex Sans', '"IBM Plex Sans"', 'Google · sturdy, open shapes'],
+  ['Lexend', 'Lexend', 'Google · wide, reading-ease'],
+  ['Noto Sans', '"Noto Sans"', 'Google · neutral'],
+  ['Literata', 'Literata', 'Google · made for e-book readers'],
+  ['Merriweather', 'Merriweather', 'Google · serif built for screens'],
+  ['Source Serif 4', '"Source Serif 4"', 'Google · clean serif'],
+];
+const SAMPLES = [[13, 'Buy groceries · 23 24 25 26 · 30°/24°'], [18, 'Review slides · Call the clinic 3pm'], [30, 'Tuesday 10 November 2026']];
+const $ = id => document.getElementById(id);
+
+function draw() {
+  const th = +$('th').value, wt = $('wt').value, dark = $('dark').checked, z = +$('zoom').value;
+  $('thv').textContent = th;
+  const host = $('rows'); host.innerHTML = '';
+  for (const [name, fam, note] of FONTS) {
+    const W = 460, H = 100;
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const x = c.getContext('2d', { willReadFrequently: true });
+    x.fillStyle = dark ? '#000' : '#fff'; x.fillRect(0, 0, W, H);
+    x.fillStyle = dark ? '#fff' : '#000';
+    let y = 6;
+    for (const [size, txt] of SAMPLES) { y += size * 1.15; x.font = `${wt} ${size}px ${fam}, sans-serif`; x.fillText(txt, 6, y); y += 6; }
+    const img = x.getImageData(0, 0, W, H), d = img.data;
+    for (let i = 0; i < d.length; i += 4) { const v = (0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2]) >= th ? 255 : 0; d[i] = d[i+1] = d[i+2] = v; }
+    x.putImageData(img, 0, 0);
+    c.style.width = W * z + 'px';
+    const row = document.createElement('div'); row.className = 'row';
+    row.innerHTML = `<h2>${name} <span>${note}</span></h2>`;
+    row.appendChild(c); host.appendChild(row);
+  }
+}
+['th', 'wt', 'dark', 'zoom'].forEach(id => $(id).addEventListener('input', draw));
+document.fonts.ready.then(() => Promise.all(FONTS.flatMap(([, f]) => ['400', '600', '700'].map(w => document.fonts.load(`${w} 16px ${f}`).catch(() => {}))))).then(draw);
+draw();
+</script>
+</body>
+</html>

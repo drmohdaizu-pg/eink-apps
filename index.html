@@ -1,0 +1,1265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>E-ink App Hub</title>
+<style>
+  :root { --bg:#f4f1ea; --card:#fff; --ink:#1b1b1b; --muted:#6b6b6b; --line:#ddd6c8; --accent:#c0392b; }
+  * { box-sizing: border-box; }
+  @font-face { font-family:'Literata'; font-style:normal; font-weight:400 700; src:url(fonts/Literata-latin.woff2) format('woff2'); }
+  @font-face { font-family:'Literata'; font-style:italic; font-weight:400 700; src:url(fonts/Literata-Italic-latin.woff2) format('woff2'); }
+  body { margin:0; font-family: system-ui, -apple-system, Segoe UI, sans-serif; background:var(--bg); color:var(--ink); }
+  header { display:flex; align-items:center; gap:12px; padding:14px 20px; border-bottom:1px solid var(--line); background:var(--card); flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0 12px 0 0; }
+  button, select, input, textarea { font:inherit; }
+  button { padding:8px 14px; border-radius:8px; border:1px solid var(--ink); background:var(--ink); color:#fff; cursor:pointer; }
+  button.ghost { background:transparent; color:var(--ink); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  header select { width:auto; }
+  #status { font-size:13px; color:var(--muted); }
+  .pill { display:inline-flex; align-items:center; gap:7px; padding:5px 12px; border-radius:999px; font-size:13px; font-weight:600; border:1px solid; }
+  .pill i { width:9px; height:9px; border-radius:50%; background:currentColor; }
+  .pill.off { color:#b42318; background:#fef3f2; border-color:#fecdca; }
+  .pill.wait { color:#b54708; background:#fffaeb; border-color:#fedf89; }
+  .pill.wait i { animation: blink 1s infinite; }
+  .pill.on { color:#067647; background:#ecfdf3; border-color:#abefc6; }
+  @keyframes blink { 50% { opacity:.2; } }
+  main { display:grid; grid-template-columns: 300px 1fr; gap:20px; padding:20px; }
+  @media (max-width: 800px) { main { grid-template-columns: 1fr; } }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  #sizePresets button { width:40px; height:40px; padding:0; display:flex; align-items:center; justify-content:center; background:#fff; border-color:var(--line); }
+  #sizePresets button.on { border-color:var(--ink); border-width:2px; }
+  #sizePresets span { display:block; border-radius:50%; background:var(--ink); }
+  #brushRing { position:fixed; pointer-events:none; border:1px solid #c0392b; border-radius:50%; display:none; transform:translate(-50%,-50%); }
+  #todoList { list-style:none; padding:0; margin:10px 0 0; }
+  #todoList li { display:flex; gap:6px; align-items:center; margin:4px 0; }
+  #todoList input.t { flex:1; padding:5px 7px; }
+  #todoList button { padding:4px 9px; background:#fff; color:var(--ink); border-color:var(--line); }
+  #todoList button.pri { font-weight:800; }
+  #todoList button.pri.on { background:#c0392b; color:#fff; border-color:#c0392b; }
+  .tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:14px; }
+  .tabs button { background:transparent; color:var(--ink); border-color:var(--line); }
+  .tabs button.on { background:var(--ink); color:#fff; border-color:var(--ink); }
+  label { display:block; font-size:13px; color:var(--muted); margin:10px 0 4px; }
+  input[type=text], textarea, select { width:100%; padding:7px 9px; border:1px solid var(--line); border-radius:6px; background:#fff; }
+  textarea { min-height:110px; resize:vertical; }
+  .opts { display:none; } .opts.on { display:block; }
+  .preview-wrap { display:flex; flex-direction:column; align-items:center; gap:12px; }
+  canvas#screen { max-width:100%; height:auto; border:10px solid #2b2b2b; border-radius:6px; background:#fff; image-rendering: pixelated; box-shadow: 0 6px 20px rgba(0,0,0,.15); }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  #log { font: 12px/1.4 ui-monospace, Consolas, monospace; color:var(--muted); max-height:140px; overflow:auto; white-space:pre-wrap; margin-top:12px; }
+  .hint { font-size:12px; color:var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>E-ink App Hub</h1>
+  <span id="connPill" class="pill off" title="Bluetooth connection to the e-ink screen"><i></i><span id="connText">Not connected</span></span>
+  <button id="connectBtn">Connect screen</button>
+  <select id="driverSel" title="Screen driver (auto-detected on connect)"></select>
+  <button id="sendBtn" disabled>Send to screen</button>
+  <button id="battBtn" class="ghost" disabled title="Shows the screen's built-in calendar, which includes a battery icon and voltage">Check battery</button>
+  <label style="margin:0;display:flex;align-items:center;gap:6px;color:var(--ink)"><input type="checkbox" id="battShow" checked> Battery
+    <input type="number" id="battV" step="0.1" min="2" max="3.6" placeholder="e.g. 3.0" title="Voltage shown by Check battery" style="width:80px;padding:6px;border:1px solid var(--line);border-radius:6px">V <b id="battPct"></b></label>
+  <button id="clearBtn" class="ghost" disabled>Clear screen</button>
+  <span id="status"></span>
+</header>
+
+<main>
+  <section class="panel">
+    <div class="tabs" id="tabs">
+      <button data-app="dashboard" class="on">Dashboard</button>
+      <button data-app="note">Note</button>
+      <button data-app="quote">Quote</button>
+      <button data-app="todo">To-do</button>
+      <button data-app="draw">Draw</button>
+      <button data-app="image">Image</button>
+    </div>
+
+    <div class="opts on" data-app="dashboard">
+      <label>City for weather</label>
+      <div class="row"><input type="text" id="city" placeholder="e.g. Kuala Lumpur" style="flex:1"><button class="ghost" id="cityBtn">Load</button></div>
+      <label>Greeting</label>
+      <input type="text" id="greeting" value="Have a good day">
+      <p class="hint">Shows the date, a month calendar and today's forecast (Open-Meteo, no key).</p>
+    </div>
+
+    <div class="opts" data-app="todo">
+      <label>List title</label>
+      <input type="text" id="todoTitle" value="To do">
+      <label>Add item</label>
+      <div class="row"><input type="text" id="todoNew" placeholder="Type and press Enter" style="flex:1"><button class="ghost" id="todoAdd">Add</button></div>
+      <ul id="todoList"></ul>
+      <p class="hint">Tick when done · <b style="color:#c0392b">!</b> = high priority (red, shown first) · ✕ deletes.</p>
+      <label>Style</label>
+      <select id="todoTheme"><option value="dark" selected>Dark (black background)</option><option value="light">Light (white background)</option></select>
+      <label><input type="checkbox" id="todoHideDone"> Hide completed items</label>
+      <label><input type="checkbox" id="todoDate" checked> Show date</label>
+      <button class="ghost" id="todoClearDone" style="margin-top:6px">Remove completed</button>
+    </div>
+
+    <div class="opts" data-app="note">
+      <label>Note text</label>
+      <textarea id="noteText">Back at 3pm
+Knock loudly!</textarea>
+      <label><input type="checkbox" id="noteAccent" checked> Accent colour title (first line)</label>
+      <p class="hint">Text is auto-sized to fill the screen.</p>
+    </div>
+
+    <div class="opts" data-app="quote">
+      <label>Mood</label>
+      <select id="quoteMood"><option value="funny" selected>Funny</option><option value="inspiring">Inspiring</option></select>
+      <p><button class="ghost" id="quoteBtn">Another quote</button></p>
+      <p class="hint">Picks a random quote from a built-in list.</p>
+    </div>
+
+    <div class="opts" data-app="draw">
+      <label>Tool</label>
+      <div class="tabs" id="toolSel" style="margin-bottom:0">
+        <button type="button" data-tool="brush" class="on">✎ Brush</button>
+        <button type="button" data-tool="fill">◧ Fill</button>
+      </div>
+      <label>Colour</label>
+      <div class="row">
+        <select id="penColor" style="width:auto"></select>
+        <button class="ghost" id="drawUndo" title="Undo (Ctrl+Z)" disabled>↶ Undo</button>
+        <button class="ghost" id="drawClear">Wipe</button>
+      </div>
+      <label>Brush size: <b id="penSizeVal">6</b> px</label>
+      <div class="row" id="sizePresets"></div>
+      <input type="range" id="penSize" min="6" max="60" value="6" style="width:100%;margin-top:8px">
+      <p class="hint">Draw directly on the preview with your mouse or finger. Fill paints a closed area in one click. Pick white to erase.</p>
+    </div>
+
+    <div class="opts" data-app="image">
+      <label>Picture</label>
+      <input type="file" id="imgFile" accept="image/*">
+      <p class="hint">Or drag a picture onto the preview, or paste one with Ctrl+V.</p>
+      <button id="imgAuto" style="width:100%;margin-top:6px" disabled>✨ Auto-optimize for this screen</button>
+      <p class="hint" id="imgAutoNote"></p>
+
+      <label>Position</label>
+      <div class="row">
+        <button class="ghost" id="imgFill" title="Fill the whole screen (crops the edges)">Fill</button>
+        <button class="ghost" id="imgFitBtn" title="Show the whole picture (white borders)">Fit</button>
+        <button class="ghost" id="imgRotate" title="Rotate 90°">⟳ Rotate</button>
+      </div>
+      <label>Zoom <b data-out="imgZoom"></b></label>
+      <input type="range" id="imgZoom" min="0.3" max="5" step="0.01" value="1" style="width:100%">
+      <p class="hint">With Move selected, drag the picture on the preview; scroll over it to zoom.</p>
+
+      <label>Tool</label>
+      <div class="tabs" id="imgToolSel" style="margin-bottom:0">
+        <button type="button" data-tool="move" class="on">✥ Move</button>
+        <button type="button" data-tool="brush">✎ Brush</button>
+        <button type="button" data-tool="text">T Text</button>
+        <button type="button" data-tool="erase">⌫ Erase</button>
+      </div>
+      <div class="row" id="imgPenRow" style="margin-top:8px">
+        <select id="imgPenColor" style="width:auto"></select>
+        <span class="hint">Size <b data-out="imgPenSize"></b></span>
+        <input type="range" id="imgPenSize" min="2" max="40" step="1" value="6" style="flex:1">
+      </div>
+      <div id="imgTextRow" style="display:none;margin-top:8px">
+        <input type="text" id="imgText" value="Hello!" placeholder="Type here, then click the preview">
+        <div class="row" style="margin-top:6px">
+          <label style="margin:0"><input type="checkbox" id="imgTextBold" checked> Bold</label>
+          <label style="margin:0"><input type="checkbox" id="imgTextBox"> White box behind</label>
+        </div>
+        <p class="hint">Click the preview to place the text (size = Size × 4).</p>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button class="ghost" id="imgUndo" disabled title="Undo (Ctrl+Z)">↶ Undo</button>
+        <button class="ghost" id="imgClearOverlay">Clear text &amp; drawing</button>
+      </div>
+      <p class="hint">Text and drawing sit on top of the photo and stay sharp (not dithered).</p>
+
+      <label>Dithering</label>
+      <select id="imgAlg">
+        <option value="fs">Floyd–Steinberg (balanced)</option>
+        <option value="atkinson">Atkinson (crisp, high contrast)</option>
+        <option value="stucki">Stucki (smooth)</option>
+        <option value="jarvis">Jarvis–Judice–Ninke (smoothest)</option>
+        <option value="bayer">Bayer (pattern / retro)</option>
+        <option value="none">None (flat colours)</option>
+      </select>
+      <label>Dither strength <b data-out="imgStrength"></b></label>
+      <input type="range" id="imgStrength" min="0" max="2" step="0.05" value="1" style="width:100%">
+      <label>Contrast <b data-out="imgContrast"></b></label>
+      <input type="range" id="imgContrast" min="0.5" max="2" step="0.05" value="1.2" style="width:100%">
+      <label>Brightness <b data-out="imgBright"></b></label>
+      <input type="range" id="imgBright" min="-100" max="100" step="1" value="0" style="width:100%">
+      <label>Colour boost <b data-out="imgSat"></b></label>
+      <input type="range" id="imgSat" min="0" max="3" step="0.05" value="1" style="width:100%">
+      <p class="hint">Raise colour boost to bring out red/yellow; set it to 0 for pure black &amp; white.</p>
+      <div class="row" style="margin-top:8px">
+        <label style="margin:0"><input type="checkbox" id="imgOrig"> Show original</label>
+        <button class="ghost" id="imgReset">Reset</button>
+      </div>
+    </div>
+
+    <div id="log"></div>
+  </section>
+
+  <section class="preview-wrap">
+    <canvas id="screen" width="400" height="300"></canvas>
+    <span class="hint" id="sizeHint"></span>
+    <div id="brushRing"></div>
+  </section>
+</main>
+
+<script>
+// ---------- Device protocol (from tsl0922/EPD-nRF5 web client) ----------
+const SVC = '62750001-d828-918d-fb46-b6c11c675aec';
+const CHR = '62750002-d828-918d-fb46-b6c11c675aec';
+const VER = '62750003-d828-918d-fb46-b6c11c675aec';
+const Cmd = { INIT:0x01, CLEAR:0x02, REFRESH:0x05, SET_TIME:0x20, WRITE_IMG:0x30 };
+
+// driver id -> [label, width, height, colour mode]
+const DRIVERS = {
+  '01':['4.2" B/W UC8176',400,300,'bw'], '03':['4.2" B/W/R UC8176',400,300,'bwr'],
+  '04':['4.2" B/W SSD1619',400,300,'bw'], '02':['4.2" B/W/R SSD1619',400,300,'bwr'],
+  '05':['4.2" 4-colour JD79668',400,300,'bwry'],
+  '0f':['5.83" low-res B/W UC8159',600,448,'bw'], '0e':['5.83" low-res B/W/R UC8159',600,448,'bwr'],
+  '11':['5.83" B/W UC8179',648,480,'bw'], '10':['5.83" B/W/R UC8179',648,480,'bwr'],
+  '0d':['5.83" 4-colour JD79665',648,480,'bwry'],
+  '06':['7.5" B/W UC8179',800,480,'bw'], '07':['7.5" B/W/R UC8179',800,480,'bwr'],
+  '0c':['7.5" 4-colour JD79665',800,480,'bwry'],
+  '08':['7.5" low-res B/W UC8159',640,384,'bw'], '09':['7.5" low-res B/W/R UC8159',640,384,'bwr'],
+  '0a':['7.5" HD B/W SSD1677',880,528,'bw'], '0b':['7.5" HD B/W/R SSD1677',880,528,'bwr'],
+};
+const UC8159 = ['08','09','0e','0f'];
+
+let device, chr, mtu = 20, rle = false, notifyIdx = 0;
+const $ = id => document.getElementById(id);
+
+function log(msg) {
+  const el = $('log');
+  el.textContent += new Date().toLocaleTimeString() + '  ' + msg + '\n';
+  el.scrollTop = el.scrollHeight;
+}
+function setStatus(s) { $('status').textContent = s; }
+// Connection indicator: 'off' | 'wait' | 'on'
+function setConn(state, text) {
+  $('connPill').className = 'pill ' + state;
+  $('connText').textContent = text;
+  document.title = (state === 'on' ? '● ' : '○ ') + 'E-ink App Hub';
+}
+
+async function write(cmd, data, withResponse = true) {
+  const payload = new Uint8Array([cmd, ...(data || [])]);
+  if (withResponse) await chr.writeValueWithResponse(payload);
+  else await chr.writeValueWithoutResponse(payload);
+}
+
+function onNotify(e) {
+  const v = e.target.value;
+  const data = new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
+  if (notifyIdx++ === 0) {
+    const drv = data[7].toString(16).padStart(2, '0');
+    log('Config received, driver 0x' + drv);
+    if (DRIVERS[drv]) { $('driverSel').value = drv; applyDriver(); log('Detected: ' + DRIVERS[drv][0]); }
+    return;
+  }
+  const msg = new TextDecoder().decode(data);
+  log('⇓ ' + msg);
+  if (msg.startsWith('mtu=')) {
+    mtu = parseInt(msg.slice(4)) || 20;
+    rle = msg.includes('rle=1');
+  }
+}
+
+async function connect() {
+  if (device && device.gatt.connected) { device.gatt.disconnect(); return; }
+  if (!navigator.bluetooth) { alert('Web Bluetooth is not available. Use Chrome or Edge on desktop.'); return; }
+  try {
+    device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: [SVC] });
+    device.addEventListener('gattserverdisconnected', onDisconnect);
+    setConn('wait', 'Connecting…');
+    const server = await device.gatt.connect();
+    const svc = await server.getPrimaryService(SVC);
+    chr = await svc.getCharacteristic(CHR);
+    try {
+      const ver = await (await svc.getCharacteristic(VER)).readValue();
+      log('Firmware version 0x' + ver.getUint8(0).toString(16));
+    } catch (_) {}
+    notifyIdx = 0;
+    await chr.startNotifications();
+    chr.addEventListener('characteristicvaluechanged', onNotify);
+    await write(Cmd.INIT);
+    setConn('on', 'Connected · ' + (device.name || 'screen'));
+    $('connectBtn').textContent = 'Disconnect';
+    $('sendBtn').disabled = $('clearBtn').disabled = $('battBtn').disabled = false;
+  } catch (e) {
+    log('Connect failed: ' + e.message);
+    setConn('off', 'Not connected');
+  }
+}
+function onDisconnect() {
+  chr = null;
+  setStatus('');
+  setConn('off', 'Disconnected');
+  $('connectBtn').textContent = 'Connect screen';
+  $('sendBtn').disabled = $('clearBtn').disabled = $('battBtn').disabled = true;
+  log('Disconnected');
+}
+
+// ---------- RLE (same format as the firmware expects) ----------
+function rleCompress(input, maxLit) {
+  const out = []; let i = 0;
+  while (i < input.length) {
+    let run = 1;
+    while (i + run < input.length && run < 130 && input[i + run] === input[i]) run++;
+    if (run >= 3) { out.push(0x80 | (run - 3), input[i]); i += run; continue; }
+    const start = i; let len = 0;
+    while (i < input.length && len < maxLit) {
+      if (i + 2 < input.length && input[i] === input[i+1] && input[i] === input[i+2]) break;
+      len++; i++;
+    }
+    out.push(len - 1); for (let j = start; j < start + len; j++) out.push(input[j]);
+  }
+  return out;
+}
+function rleChunks(data, max) {
+  const s = rleCompress(data, Math.min(max - 1, 128)); const chunks = [];
+  let i = 0, start = 0;
+  while (i < s.length) {
+    const len = (s[i] & 0x80) ? 2 : s[i] + 2;
+    if (i - start + len > max && i > start) { chunks.push(s.slice(start, i)); start = i; }
+    i += len;
+  }
+  if (i > start) chunks.push(s.slice(start, i));
+  return chunks;
+}
+
+async function writeImage(data, plane) {
+  const size = mtu - 2;
+  const rc = rle ? rleChunks(data, size) : null;
+  const useRle = rc && rc.reduce((a, c) => a + c.length, 0) < data.length;
+  const n = useRle ? rc.length : Math.ceil(data.length / size);
+  let noReply = 50;
+  for (let i = 0; i < n; i++) {
+    const chunk = useRle ? rc[i] : Array.from(data.slice(i * size, (i + 1) * size));
+    const flag = rle
+      ? (plane === 'bw' ? 0 : 1) | (i === 0 ? 2 : 0) | (useRle ? 4 : 0)
+      : (plane === 'bw' ? 0x0F : 0x00) | (i === 0 ? 0x00 : 0xF0);
+    setStatus(`Sending ${plane === 'bw' ? '' : 'colour '}${i + 1}/${n}`);
+    if (noReply > 0) { await write(Cmd.WRITE_IMG, [flag, ...chunk], false); noReply--; }
+    else { await write(Cmd.WRITE_IMG, [flag, ...chunk], true); noReply = 50; }
+  }
+}
+
+// ---------- Encoding canvas -> device bytes ----------
+const COLORS = { black:[0,0,0], white:[255,255,255], red:[220,30,30], yellow:[240,200,0] };
+function palette() {
+  const m = DRIVERS[$('driverSel').value][3];
+  return m === 'bw' ? ['black','white'] : m === 'bwr' ? ['black','white','red'] : ['black','white','red','yellow'];
+}
+// Grey cut-off: pixels darker than this become black. Text apps use a high value so
+// thin anti-aliased strokes stay solid; photos use the midpoint for balanced dithering.
+let bwThreshold = 128, crispColour = false;
+function nearest(r, g, b, pal) {
+  if (crispColour) {
+    // Crisp mode for text/graphics: any reddish/yellowish tint keeps its colour,
+    // so anti-aliased edges of coloured text don't turn into black specks.
+    if (pal.includes('yellow') && Math.min(r, g) - b > 60 && Math.abs(r - g) < 70) return 'yellow';
+    if (pal.includes('red') && r - Math.max(g, b) > 30) return 'red';
+  }
+  // Low-saturation pixels (greys, text edges) only ever become black or white
+  if (Math.max(r, g, b) - Math.min(r, g, b) < 70) return (0.299*r + 0.587*g + 0.114*b) >= bwThreshold ? 'white' : 'black';
+  let best = pal[0], bd = 1e9;
+  for (const n of pal) { const c = COLORS[n]; const d = (r-c[0])**2 + (g-c[1])**2 + (b-c[2])**2; if (d < bd) { bd = d; best = n; } }
+  return best;
+}
+// Snap every pixel to the screen palette (optionally with dithering)
+function quantize(dither) {
+  const pal = palette(), W = canvas.width, H = canvas.height;
+  const img = ctx.getImageData(0, 0, W, H), d = img.data;
+  const f = new Float32Array(W * H * 3);
+  for (let i = 0; i < W * H; i++) { f[i*3] = d[i*4]; f[i*3+1] = d[i*4+1]; f[i*3+2] = d[i*4+2]; }
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x, r = f[i*3], g = f[i*3+1], b = f[i*3+2];
+    const c = COLORS[nearest(r, g, b, pal)];
+    d[i*4] = c[0]; d[i*4+1] = c[1]; d[i*4+2] = c[2]; d[i*4+3] = 255;
+    if (!dither) continue;
+    const er = r - c[0], eg = g - c[1], eb = b - c[2];
+    const push = (xx, yy, k) => { if (xx < 0 || xx >= W || yy >= H) return; const j = (yy * W + xx) * 3; f[j] += er*k; f[j+1] += eg*k; f[j+2] += eb*k; };
+    push(x+1, y, 7/16); push(x-1, y+1, 3/16); push(x, y+1, 5/16); push(x+1, y+1, 1/16);
+  }
+  ctx.putImageData(img, 0, 0);
+}
+function encode() {
+  const W = canvas.width, H = canvas.height, pal = palette(), mode = DRIVERS[$('driverSel').value][3];
+  const d = ctx.getImageData(0, 0, W, H).data;
+  const colorAt = i => nearest(d[i*4], d[i*4+1], d[i*4+2], pal);
+  if (mode === 'bwry') {
+    const out = new Uint8Array(Math.ceil(W * H / 4)), val = { black:0, white:1, yellow:2, red:3 };
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const i = y * W + x; out[i >> 2] |= val[colorAt(i)] << (6 - (x % 4) * 2);
+    }
+    return { bw: out };
+  }
+  const bw_ = Math.ceil(W / 8), bw = new Uint8Array(bw_ * H), red = new Uint8Array(bw_ * H).fill(0xFF);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const c = colorAt(y * W + x), idx = y * bw_ + (x >> 3), bit = 7 - (x % 8);
+    if (c === 'white') bw[idx] |= 1 << bit;
+    if (c === 'red') red[idx] &= ~(1 << bit);
+  }
+  return mode === 'bw' ? { bw } : { bw, red };
+}
+function uc8159(bw, red) {
+  const out = new Uint8Array(bw.length * 4); let p = 0;
+  for (let i = 0; i < bw.length; i++) {
+    let b = bw[i], r = red[i];
+    for (let j = 0; j < 8; j += 2) {
+      const px = () => { const v = !(r & 0x80) ? 4 : !(b & 0x80) ? 0 : 3; b = (b << 1) & 0xFF; r = (r << 1) & 0xFF; return v; };
+      const hi = px(), lo = px(); out[p++] = (hi << 4) | lo;
+    }
+  }
+  return out;
+}
+
+async function send() {
+  if (!chr) return;
+  const t0 = performance.now();
+  $('sendBtn').disabled = true;
+  try {
+    if (app === 'image' && $('imgOrig').checked) { $('imgOrig').checked = false; render(); }  // never send the un-dithered original
+    quantize(false); // make sure preview == what goes to the screen
+    const { bw, red } = encode(), drv = $('driverSel').value;
+    await write(Cmd.INIT);
+    if (UC8159.includes(drv)) await writeImage(uc8159(bw, red || new Uint8Array(bw.length).fill(0xFF)), 'bw');
+    else { await writeImage(bw, 'bw'); if (red) await writeImage(red, 'red'); }
+    await write(Cmd.REFRESH);
+    const s = ((performance.now() - t0) / 1000).toFixed(1);
+    setStatus(`Sent in ${s}s — screen is refreshing`); log(`Image sent (${s}s, RLE ${rle ? 'on' : 'off'}, MTU ${mtu})`);
+  } catch (e) { log('Send failed: ' + e.message); }
+  $('sendBtn').disabled = !chr;
+}
+// Switch the screen to its built-in calendar (which draws battery voltage) and sync its clock.
+// Sending any app afterwards switches it back to picture mode.
+async function checkBattery() {
+  if (!chr) return;
+  const ts = Math.floor(Date.now() / 1000), tz = -new Date().getTimezoneOffset() / 60;
+  await write(Cmd.SET_TIME, [(ts >>> 24) & 0xFF, (ts >>> 16) & 0xFF, (ts >>> 8) & 0xFF, ts & 0xFF, tz & 0xFF, 1]);
+  log('Calendar mode on: battery shows in the top-right corner. Send an app to switch back.');
+  setStatus('Showing built-in calendar with battery');
+}
+async function clearScreen() {
+  if (chr && confirm('Clear the screen?')) { await write(Cmd.CLEAR); log('Clear sent'); }
+}
+
+// ---------- Apps ----------
+const canvas = $('screen'), ctx = canvas.getContext('2d', { willReadFrequently: true });
+let app = 'dashboard';
+const accent = () => palette().includes('red') ? '#dc1e1e' : '#000';
+const W = () => canvas.width, H = () => canvas.height;
+
+function blank() { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W(), H()); ctx.textBaseline = 'alphabetic'; }
+// Verdana was drawn for low-resolution screens: even strokes and open spacing survive 1-bit e-ink
+const UI_FONT = 'Verdana, Tahoma, sans-serif';
+function fitText(text, maxW, maxH, weight = 'bold', family = 'Georgia, serif') {
+  for (let s = Math.floor(maxH); s > 8; s--) {
+    ctx.font = `${weight} ${s}px ${family}`;
+    if (ctx.measureText(text).width <= maxW) return s;
+  }
+  return 8;
+}
+function wrapLines(text, maxW) {
+  const lines = [];
+  for (const para of text.split('\n')) {
+    let line = '';
+    for (const w of para.split(' ')) {
+      const t = line ? line + ' ' + w : w;
+      if (ctx.measureText(t).width > maxW && line) { lines.push(line); line = w; } else line = t;
+    }
+    lines.push(line);
+  }
+  return lines;
+}
+
+// Dashboard
+let weather = null;
+const WMO = { 0:'Clear', 1:'Mostly clear', 2:'Partly cloudy', 3:'Overcast', 45:'Fog', 48:'Fog', 51:'Drizzle', 53:'Drizzle', 55:'Drizzle',
+  61:'Light rain', 63:'Rain', 65:'Heavy rain', 80:'Showers', 81:'Showers', 82:'Heavy showers', 95:'Thunderstorm', 96:'Thunderstorm', 99:'Thunderstorm',
+  71:'Snow', 73:'Snow', 75:'Heavy snow' };
+async function loadWeather() {
+  const city = $('city').value.trim(); if (!city) return;
+  try { localStorage.setItem('city', city); } catch (_) {}
+  try {
+    const g = await (await fetch('https://geocoding-api.open-meteo.com/v1/search?count=1&name=' + encodeURIComponent(city))).json();
+    if (!g.results) { log('City not found'); return; }
+    const { latitude, longitude, name, country_code } = g.results[0];
+    const w = await (await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=1`)).json();
+    weather = { name, t: Math.round(w.current.temperature_2m), code: w.current.weather_code,
+      hi: Math.round(w.daily.temperature_2m_max[0]), lo: Math.round(w.daily.temperature_2m_min[0]), rain: w.daily.precipitation_probability_max[0] };
+    weather.air = await loadAir(latitude, longitude, country_code);
+    render();
+  } catch (e) { log('Weather failed: ' + e.message); }
+}
+// ---------- Air quality ----------
+// Malaysian cities: the official Air Pollutant Index from the nearest DOE station (via server.py's relay).
+// Elsewhere, or if DOE is unreachable: US AQI from Open-Meteo. Either way the dashboard still works without it.
+const MY_BANDS = [[50, 'Good'], [100, 'Moderate'], [200, 'Unhealthy'], [300, 'Very unhealthy'], [Infinity, 'Hazardous']];
+const US_BANDS = [[50, 'Good'], [100, 'Moderate'], [150, 'Unhealthy for some'], [200, 'Unhealthy'], [300, 'Very unhealthy'], [Infinity, 'Hazardous']];
+const titleCase = t => t.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+async function loadAir(lat, lon, country) {
+  // The DOE relay only exists when running through server.py (not on GitHub Pages)
+  const hasRelay = ['localhost', '127.0.0.1'].includes(location.hostname);
+  if (country === 'MY' && hasRelay) {
+    try {
+      const st = await (await fetch(`/doe/getstationidbylonglat?longitude=${lon}&latitude=${lat}`)).json();
+      const id = st.data && st.data[0] && st.data[0].STATION_ID;
+      const cur = id && await (await fetch(`/doe/currentapicurrentlocation?stationid=${encodeURIComponent(id)}`)).json();
+      const r = cur && cur.data && cur.data[0];
+      if (r && r.API != null) {
+        const v = Math.round(r.API), band = MY_BANDS.findIndex(([m]) => v <= m);
+        const where = titleCase(String(r.STATION_LOCATION || '').split(',')[0]);
+        log(`DOE API ${v} at ${r.STATION_LOCATION} (${r.DATETIME})`);
+        return { title: 'AIR POLLUTANT INDEX', value: v, bands: MY_BANDS, band, label: r.CLASS ? titleCase(r.CLASS) : MY_BANDS[band][1],
+          note: [where, r.PARAM_SELECTED].filter(Boolean).join(' · ') };
+      }
+    } catch (e) { log('DOE air data unavailable, using US AQI: ' + e.message); }
+  }
+  try {
+    const a = await (await fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=us_aqi,pm2_5&timezone=auto`)).json();
+    if (a.current && a.current.us_aqi != null) {
+      const v = Math.round(a.current.us_aqi), band = US_BANDS.findIndex(([m]) => v <= m);
+      return { title: 'AIR QUALITY (US AQI)', value: v, bands: US_BANDS, band, label: US_BANDS[band][1],
+        note: a.current.pm2_5 != null ? `PM2.5  ${Math.round(a.current.pm2_5)} µg/m³` : '' };
+    }
+  } catch (e) { log('Air quality unavailable: ' + e.message); }
+  return null;
+}
+
+// Dashboard and Quote use Literata: a serif made for e-book readers (bundled in fonts/, works offline)
+const QUOTE_FONT = 'Literata, Georgia, serif';
+// Literata's digits already sit evenly on the line, so numbers use the same font
+const NUM_FONT = QUOTE_FONT;
+function drawDashboard() {
+  const now = new Date(), w = W(), h = H(), pad = Math.round(w * 0.04);
+  const leftW = Math.round(w * 0.55);
+  ctx.fillStyle = '#000';
+  // Day name, big date
+  ctx.font = `bold ${Math.round(h * 0.09)}px ${QUOTE_FONT}`;
+  ctx.fillStyle = accent();
+  ctx.fillText(now.toLocaleDateString('en-GB', { weekday: 'long' }).toUpperCase(), pad, pad + h * 0.09);
+  ctx.fillStyle = '#000';
+  ctx.font = `bold ${Math.round(h * 0.38)}px ${QUOTE_FONT}`;
+  ctx.fillText(now.getDate(), pad, pad + h * 0.48);
+  ctx.font = `${Math.round(h * 0.07)}px ${QUOTE_FONT}`;
+ctx.fillText(now.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }), pad, pad + h * 0.58);
+  // Weather
+  ctx.font = `${Math.round(h * 0.06)}px ${QUOTE_FONT}`;
+  const wy = h * 0.74;
+  if (weather) {
+    ctx.font = `bold ${Math.round(h * 0.11)}px ${NUM_FONT}`;
+    ctx.fillText(`${weather.t}°`, pad, wy + h * 0.06);
+    const tx = pad + ctx.measureText(`${weather.t}°`).width + h * 0.03, maxW = leftW - tx - pad * 0.5;
+    const line = (txt, y, fam = QUOTE_FONT) => { fitText(txt, maxW, h * 0.058, 'bold', fam); ctx.fillText(txt, tx, y); };
+    line(WMO[weather.code] || '', wy + h * 0.01);
+    line(`${weather.hi}°/${weather.lo}° · ☂ ${weather.rain}%`, wy + h * 0.07, NUM_FONT);
+  } else {
+    ctx.fillText('Add a city for weather', pad, wy + h * 0.04);
+  }
+  ctx.font = `italic ${Math.round(h * 0.05)}px ${QUOTE_FONT}`;
+  ctx.fillText($('greeting').value, pad, h - pad);
+  // Divider
+  ctx.fillRect(leftW, pad, 2, h - pad * 2);
+  // Calendar
+  const cx = leftW + pad, cw = w - cx - pad, cell = cw / 7, top = pad + h * 0.06;
+  ctx.font = `bold ${Math.round(cell * 0.38)}px ${QUOTE_FONT}`;
+  ctx.textAlign = 'center';
+  ['M','T','W','T','F','S','S'].forEach((d, i) => ctx.fillText(d, cx + cell * i + cell / 2, top));
+  const first = new Date(now.getFullYear(), now.getMonth(), 1), start = (first.getDay() + 6) % 7;
+  const days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const weeks = Math.ceil((start + days) / 7), showAqi = !!(weather && weather.air);
+  const rowH = Math.min(cell, (h - top - pad - (showAqi ? h * 0.3 : 0)) / (weeks + 0.3));
+  ctx.font = `bold ${Math.round(rowH * 0.5)}px ${NUM_FONT}`;   // even-height digits
+  for (let d = 1; d <= days; d++) {
+    const k = start + d - 1, x = cx + (k % 7) * cell + cell / 2, y = top + rowH * (Math.floor(k / 7) + 1) + rowH * 0.3;
+    if (d === now.getDate()) {
+      ctx.fillStyle = accent(); ctx.beginPath(); ctx.arc(x, y - rowH * 0.15, rowH * 0.42, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.fillText(d, x, y); ctx.fillStyle = '#000';
+    } else ctx.fillText(d, x, y);
+  }
+  ctx.textAlign = 'left';
+  if (showAqi) drawAqi(cx, top + rowH * (weeks + 0.6), cw, h - pad);
+}
+
+function drawAqi(x, y0, bw, y1) {
+  const air = weather.air, n = air.bands.length, bad = air.band >= 2;   // band 2+ is unhealthy on both scales
+  const red = palette().includes('red') ? '#dc1e1e' : '#000', hot = bad ? red : '#000';
+  const bh = y1 - y0, unit = Math.min(bh / 5, H() * 0.075);
+  // Rule + title
+  ctx.fillStyle = '#000'; ctx.fillRect(x, y0, bw, 2);
+  fitText(air.title, bw, unit * 0.7, 'bold', QUOTE_FONT);
+  ctx.fillText(air.title, x, y0 + unit * 1.1);
+  // Big number + band name
+  const ny = y0 + unit * 3.1;
+  ctx.font = `bold ${Math.round(unit * 2)}px ${NUM_FONT}`; ctx.fillStyle = hot;
+  ctx.fillText(air.value, x, ny);
+  const tx = x + ctx.measureText(String(air.value)).width + unit * 0.5;
+  fitText(air.label, x + bw - tx, unit * 0.95, 'bold', QUOTE_FONT); ctx.fillStyle = hot;
+  ctx.fillText(air.label, tx, ny - unit * 0.35);
+  // Segmented scale: filled up to the current band, unhealthy segments in red
+  const sy = ny + unit * 0.7, sh = Math.max(6, Math.round(unit * 0.55)), gap = 3, sw = (bw - gap * (n - 1)) / n;
+  for (let i = 0; i < n; i++) {
+    const sx = x + i * (sw + gap);
+    ctx.fillStyle = i >= 2 ? red : '#000';
+    if (i <= air.band) ctx.fillRect(sx, sy, sw, sh);
+    else { ctx.strokeStyle = ctx.fillStyle; ctx.lineWidth = 2; ctx.strokeRect(sx + 1, sy + 1, sw - 2, sh - 2); }
+  }
+  ctx.fillStyle = '#000';
+  if (air.note) {   // station + main pollutant (DOE) or PM2.5 (US AQI)
+    fitText(air.note, bw, unit * 0.8, 'normal', NUM_FONT); ctx.fillStyle = '#000';
+    ctx.fillText(air.note, x, sy + sh + unit * 1.05);
+  }
+}
+
+// Note
+function drawNote() {
+  const pad = W() * 0.06, text = $('noteText').value || ' ';
+  const [title, ...rest] = text.split('\n');
+  let size = H() * 0.4, lines;
+  for (; size > 10; size -= 2) {
+    ctx.font = `bold ${size}px ${UI_FONT}`;
+    lines = wrapLines(text, W() - pad * 2);
+    if (lines.length * size * 1.2 <= H() - pad * 2) break;
+  }
+  const total = lines.length * size * 1.2;
+  let y = (H() - total) / 2 + size;
+  ctx.textAlign = 'center';
+  const titleLines = wrapLines(title, W() - pad * 2).length;
+  lines.forEach((l, i) => {
+    ctx.fillStyle = $('noteAccent').checked && i < titleLines ? accent() : '#000';
+    ctx.fillText(l, W() / 2, y); y += size * 1.2;
+  });
+  ctx.textAlign = 'left';
+}
+
+// Quote
+const FUNNY = [
+  ['I love deadlines. I love the whooshing noise they make as they go by.', 'Douglas Adams'],
+  ['Age is something that doesn\'t matter, unless you are a cheese.', 'Luis Buñuel'],
+  ['People say nothing is impossible, but I do nothing every day.', 'A. A. Milne'],
+  ['The early bird might get the worm, but the second mouse gets the cheese.', 'Steven Wright'],
+  ['I always wanted to be somebody, but now I realize I should have been more specific.', 'Lily Tomlin'],
+  ['I\'m not superstitious, but I am a little stitious.', 'Michael Scott, The Office'],
+  ['Doing nothing is very hard to do… you never know when you\'re finished.', 'Leslie Nielsen'],
+  ['I am so clever that sometimes I don\'t understand a single word of what I am saying.', 'Oscar Wilde'],
+  ['Behind every great man is a woman rolling her eyes.', 'Jim Carrey'],
+  ['I have not failed. I\'ve just found 10,000 ways that won\'t work.', 'Thomas Edison'],
+  ['If you think you are too small to make a difference, try sleeping with a mosquito.', 'Dalai Lama'],
+  ['Before you criticize someone, walk a mile in their shoes. Then you\'re a mile away and you have their shoes.', 'Jack Handey'],
+];
+const INSPIRING = [
+  ['The best way out is always through.', 'Robert Frost'],
+  ['Simplicity is the ultimate sophistication.', 'Leonardo da Vinci'],
+  ['Well done is better than well said.', 'Benjamin Franklin'],
+  ['It always seems impossible until it is done.', 'Nelson Mandela'],
+  ['What we think, we become.', 'Buddha'],
+  ['Act as if what you do makes a difference. It does.', 'William James'],
+  ['The secret of getting ahead is getting started.', 'Mark Twain'],
+  ['Knowing is not enough; we must apply.', 'Goethe'],
+  ['He who has a why to live can bear almost any how.', 'Friedrich Nietzsche'],
+  ['Wherever you go, go with all your heart.', 'Confucius'],
+];
+const QUOTES = () => $('quoteMood').value === 'funny' ? FUNNY : INSPIRING;
+let quoteIdx = Math.floor(Math.random() * FUNNY.length);
+function drawQuote() {
+  const list = QUOTES(), [q, a] = list[quoteIdx % list.length], pad = W() * 0.1;
+  ctx.fillStyle = accent();
+  ctx.font = `bold ${H() * 0.35}px ${QUOTE_FONT}`;
+  ctx.fillText('“', pad * 0.6, H() * 0.36);
+  ctx.fillStyle = '#000';
+  let size = H() * 0.16, lines;
+  for (; size > 10; size -= 1) {
+    ctx.font = `italic ${size}px ${QUOTE_FONT}`;
+    lines = wrapLines(q, W() - pad * 2);
+    if (lines.length * size * 1.25 <= H() * 0.6) break;
+  }
+  let y = H() * 0.48 - (lines.length * size * 1.25) / 2 + size;
+  lines.forEach(l => { ctx.fillText(l, pad, y); y += size * 1.25; });
+  ctx.font = `${H() * 0.06}px ${QUOTE_FONT}`;
+  ctx.textAlign = 'right';
+  ctx.fillText('— ' + a, W() - pad, H() - pad * 0.6);
+  ctx.textAlign = 'left';
+}
+
+// Draw (persistent layer)
+let drawLayer = null, drawing = false, last = null;
+function ensureDrawLayer() {
+  if (!drawLayer || drawLayer.width !== W() || drawLayer.height !== H()) {
+    drawLayer = document.createElement('canvas'); drawLayer.width = W(); drawLayer.height = H();
+    const c = drawLayer.getContext('2d'); c.fillStyle = '#fff'; c.fillRect(0, 0, W(), H());
+  }
+}
+function drawDraw() { ensureDrawLayer(); ctx.drawImage(drawLayer, 0, 0); }
+function pos(e) { const r = canvas.getBoundingClientRect(); return [(e.clientX - r.left) * W() / r.width, (e.clientY - r.top) * H() / r.height]; }
+// Undo: snapshot the drawing before each stroke, fill or wipe (last 30 kept)
+const undoStack = [];
+function saveUndo() {
+  ensureDrawLayer();
+  undoStack.push(drawLayer.getContext('2d').getImageData(0, 0, drawLayer.width, drawLayer.height));
+  if (undoStack.length > 30) undoStack.shift();
+  $('drawUndo').disabled = false;
+}
+function undo() {
+  const snap = undoStack.pop(); if (!snap) return;
+  if (!drawLayer || drawLayer.width !== snap.width || drawLayer.height !== snap.height) {
+    drawLayer = document.createElement('canvas'); drawLayer.width = snap.width; drawLayer.height = snap.height;
+  }
+  drawLayer.getContext('2d').putImageData(snap, 0, 0);
+  $('drawUndo').disabled = !undoStack.length;
+  render();
+}
+$('drawUndo').onclick = undo;
+document.addEventListener('keydown', e => {
+  if (app === 'draw' && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) { e.preventDefault(); undo(); }
+});
+let tool = 'brush';
+$('toolSel').onclick = e => {
+  const b = e.target.closest('button'); if (!b) return;
+  tool = b.dataset.tool;
+  document.querySelectorAll('#toolSel button').forEach(x => x.classList.toggle('on', x === b));
+};
+// Paint-bucket fill. Pixels are grouped by the screen colour they will become,
+// so soft anti-aliased stroke edges don't leave gaps or block the fill.
+function floodFill(px, py) {
+  const w = W(), h = H(), c = drawLayer.getContext('2d');
+  const img = c.getImageData(0, 0, w, h), d = img.data, pal = palette();
+  const cls = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) cls[i] = pal.indexOf(nearest(d[i*4], d[i*4+1], d[i*4+2], pal));
+  const x0 = Math.floor(px), y0 = Math.floor(py), target = cls[y0 * w + x0];
+  const hex = $('penColor').value, tmp = document.createElement('canvas').getContext('2d');
+  tmp.fillStyle = hex; tmp.fillRect(0, 0, 1, 1); const [r, g, b] = tmp.getImageData(0, 0, 1, 1).data;
+  if (pal.indexOf(nearest(r, g, b, pal)) === target) return;   // already that colour
+  const seen = new Uint8Array(w * h), stack = [y0 * w + x0];
+  while (stack.length) {
+    const i = stack.pop();
+    if (seen[i] || cls[i] !== target) continue;
+    seen[i] = 1; d[i*4] = r; d[i*4+1] = g; d[i*4+2] = b; d[i*4+3] = 255;
+    const x = i % w;
+    if (x > 0) stack.push(i - 1); if (x < w - 1) stack.push(i + 1);
+    if (i >= w) stack.push(i - w); if (i < w * (h - 1)) stack.push(i + w);
+  }
+  c.putImageData(img, 0, 0);
+}
+canvas.addEventListener('pointerdown', e => {
+  if (app !== 'draw') return;
+  saveUndo();
+  if (tool === 'fill') { floodFill(...pos(e)); render(); return; }
+  drawing = true; last = pos(e); canvas.setPointerCapture(e.pointerId); stroke(e); });
+canvas.addEventListener('pointermove', e => { moveRing(e); if (drawing) stroke(e); });
+canvas.addEventListener('pointerleave', () => { $('brushRing').style.display = 'none'; });
+// Ring under the pointer showing the real brush size at the current preview zoom
+function moveRing(e) {
+  const ring = $('brushRing');
+  if (app !== 'draw' || tool === 'fill') { ring.style.display = 'none'; return; }
+  const d = +$('penSize').value * canvas.getBoundingClientRect().width / W();
+  Object.assign(ring.style, { display: 'block', left: e.clientX + 'px', top: e.clientY + 'px', width: d + 'px', height: d + 'px' });
+}
+// Brush size presets + slider
+const SIZES = [6, 12, 18, 24, 48];
+$('sizePresets').innerHTML = SIZES.map(s => `<button type="button" data-size="${s}" title="${s}px"><span style="width:${Math.max(3, s * 0.6)}px;height:${Math.max(3, s * 0.6)}px"></span></button>`).join('');
+function setSize(s) {
+  $('penSize').value = s; $('penSizeVal').textContent = s;
+  document.querySelectorAll('#sizePresets button').forEach(b => b.classList.toggle('on', +b.dataset.size === +s));
+}
+$('sizePresets').onclick = e => { const b = e.target.closest('button'); if (b) setSize(b.dataset.size); };
+$('penSize').addEventListener('input', () => setSize($('penSize').value));
+setSize(6);
+canvas.addEventListener('pointerup', () => { drawing = false; });
+function stroke(e) {
+  const p = pos(e), c = drawLayer.getContext('2d');
+  c.strokeStyle = $('penColor').value; c.lineWidth = +$('penSize').value; c.lineCap = 'round';
+  c.beginPath(); c.moveTo(...last); c.lineTo(...p); c.stroke(); last = p; render();
+}
+
+// ---------- Image app ----------
+// View state: zoom is relative to "fill" (1 = covers the screen); pan is in screen pixels.
+let picture = null, imgRot = 0, imgPanX = 0, imgPanY = 0, imgDrag = null;
+const IMG_DEFAULTS = { imgZoom: 1, imgAlg: 'fs', imgStrength: 1, imgContrast: 1.2, imgBright: 0, imgSat: 1 };
+
+function loadPicture(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+  const img = new Image();
+  img.onload = () => { picture = img; imgRot = 0; imgPanX = imgPanY = 0; $('imgZoom').value = 1; $('imgAuto').disabled = false; $('imgAutoNote').textContent = ''; render(); };
+  img.src = URL.createObjectURL(file);
+}
+$('imgFile').addEventListener('change', e => loadPicture(e.target.files[0]));
+canvas.addEventListener('dragover', e => e.preventDefault());
+canvas.addEventListener('drop', e => {
+  e.preventDefault(); loadPicture(e.dataTransfer.files[0]);
+  if (app !== 'image') document.querySelector('#tabs [data-app=image]').click();
+});
+document.addEventListener('paste', e => {
+  const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
+  if (item) { loadPicture(item.getAsFile()); if (app !== 'image') document.querySelector('#tabs [data-app=image]').click(); }
+});
+
+// Picture size after rotation, and the scale that makes it cover the screen
+function picDims() { return imgRot % 2 ? [picture.height, picture.width] : [picture.width, picture.height]; }
+function coverScale() { const [pw, ph] = picDims(); return Math.max(W() / pw, H() / ph); }
+function containScale() { const [pw, ph] = picDims(); return Math.min(W() / pw, H() / ph); }
+
+$('imgFill').onclick = () => { $('imgZoom').value = 1; imgPanX = imgPanY = 0; render(); };
+$('imgFitBtn').onclick = () => { if (!picture) return; $('imgZoom').value = containScale() / coverScale(); imgPanX = imgPanY = 0; render(); };
+$('imgRotate').onclick = () => { imgRot = (imgRot + 1) % 4; imgPanX = imgPanY = 0; render(); };
+$('imgReset').onclick = () => {
+  for (const [id, v] of Object.entries(IMG_DEFAULTS)) $(id).value = v;
+  imgRot = 0; imgPanX = imgPanY = 0; $('imgOrig').checked = false; render();
+};
+
+// ---- Overlay (text + brush on top of the photo) ----
+let imgTool = 'move', overlay = null, ovDrawing = false, ovLast = null;
+const ovUndo = [];
+function ensureOverlay() {
+  if (!overlay || overlay.width !== W() || overlay.height !== H()) {
+    overlay = document.createElement('canvas'); overlay.width = W(); overlay.height = H(); ovUndo.length = 0; $('imgUndo').disabled = true;
+  }
+  return overlay.getContext('2d');
+}
+function ovSave() {
+  const c = ensureOverlay();
+  ovUndo.push(c.getImageData(0, 0, W(), H())); if (ovUndo.length > 30) ovUndo.shift();
+  $('imgUndo').disabled = false;
+}
+function ovUndoStep() {
+  const snap = ovUndo.pop(); if (!snap) return;
+  ensureOverlay().putImageData(snap, 0, 0); $('imgUndo').disabled = !ovUndo.length; render();
+}
+$('imgUndo').onclick = ovUndoStep;
+$('imgClearOverlay').onclick = () => { if (!overlay) return; ovSave(); ensureOverlay().clearRect(0, 0, W(), H()); render(); };
+document.addEventListener('keydown', e => {
+  if (app === 'image' && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) { e.preventDefault(); ovUndoStep(); }
+});
+$('imgToolSel').onclick = e => {
+  const b = e.target.closest('button'); if (!b) return;
+  imgTool = b.dataset.tool;
+  document.querySelectorAll('#imgToolSel button').forEach(x => x.classList.toggle('on', x === b));
+  $('imgTextRow').style.display = imgTool === 'text' ? 'block' : 'none';
+  canvas.style.cursor = imgTool === 'move' ? 'grab' : imgTool === 'text' ? 'text' : 'crosshair';
+};
+function ovStroke(p) {
+  const c = ensureOverlay();
+  c.globalCompositeOperation = imgTool === 'erase' ? 'destination-out' : 'source-over';
+  c.strokeStyle = $('imgPenColor').value; c.lineWidth = +$('imgPenSize').value * (imgTool === 'erase' ? 2 : 1); c.lineCap = c.lineJoin = 'round';
+  c.beginPath(); c.moveTo(...ovLast); c.lineTo(...p); c.stroke();
+  c.globalCompositeOperation = 'source-over';
+  ovLast = p; scheduleRender();
+}
+function ovText([x, y]) {
+  const txt = $('imgText').value.trim(); if (!txt) return;
+  ovSave();
+  const c = ensureOverlay(), size = +$('imgPenSize').value * 4;
+  c.font = `${$('imgTextBold').checked ? 'bold ' : ''}${size}px ${UI_FONT}`;
+  c.textBaseline = 'middle';
+  const lines = txt.split('\\n'), w = Math.max(...lines.map(l => c.measureText(l).width));
+  if ($('imgTextBox').checked) { c.fillStyle = '#fff'; c.fillRect(x - size * 0.3, y - size * 0.75, w + size * 0.6, size * 1.5 * lines.length); }
+  c.fillStyle = $('imgPenColor').value;
+  lines.forEach((l, i) => c.fillText(l, x, y + i * size * 1.2));
+  render();
+}
+// Composite the overlay snapped to solid screen colours, so it stays sharp
+function drawOverlay() {
+  if (!overlay || overlay.width !== W() || overlay.height !== H()) return;
+  const o = overlay.getContext('2d').getImageData(0, 0, W(), H()).data, img = ctx.getImageData(0, 0, W(), H()), d = img.data;
+  const pal = palette(), saved = [bwThreshold, crispColour]; bwThreshold = 215; crispColour = true;   // crisp text rules
+  for (let i = 0; i < o.length; i += 4) {
+    if (o[i+3] < 90) continue;
+    const c = COLORS[nearest(o[i], o[i+1], o[i+2], pal)];
+    d[i] = c[0]; d[i+1] = c[1]; d[i+2] = c[2];
+  }
+  [bwThreshold, crispColour] = saved;
+  ctx.putImageData(img, 0, 0);
+}
+
+// Pointer on the preview: Move pans/zooms the photo, other tools edit the overlay
+canvas.addEventListener('pointerdown', e => {
+  if (app !== 'image') return;
+  if (imgTool === 'text') { ovText(pos(e)); return; }
+  if (imgTool === 'brush' || imgTool === 'erase') {
+    ovSave(); ovDrawing = true; ovLast = pos(e); canvas.setPointerCapture(e.pointerId); ovStroke(pos(e)); return;
+  }
+  if (!picture) return;
+  imgDrag = { x: e.clientX, y: e.clientY, px: imgPanX, py: imgPanY };
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener('pointerup', () => { ovDrawing = false; });
+canvas.addEventListener('pointermove', e => {
+  if (ovDrawing) { ovStroke(pos(e)); return; }
+  if (!imgDrag) return;
+  const k = W() / canvas.getBoundingClientRect().width;
+  imgPanX = imgDrag.px + (e.clientX - imgDrag.x) * k;
+  imgPanY = imgDrag.py + (e.clientY - imgDrag.y) * k;
+  scheduleRender();
+});
+canvas.addEventListener('pointerup', () => { if (imgDrag) { imgDrag = null; render(); } });
+canvas.addEventListener('wheel', e => {
+  if (app !== 'image' || !picture) return;
+  e.preventDefault();
+  const z = Math.min(5, Math.max(0.3, +$('imgZoom').value * (e.deltaY > 0 ? 0.92 : 1.08)));
+  $('imgZoom').value = z; scheduleRender();
+}, { passive: false });
+
+// Colour matching in Lab space (perceptual), like the original web tool
+function toLab(r, g, b) {
+  const f = c => { c /= 255; return c > 0.04045 ? Math.pow((c + 0.055) / 1.055, 2.4) : c / 12.92; };
+  const R = f(r), G = f(g), B = f(b);
+  let x = (R * 0.4124 + G * 0.3576 + B * 0.1805) / 0.95047, y = R * 0.2126 + G * 0.7152 + B * 0.0722, z = (R * 0.0193 + G * 0.1192 + B * 0.9505) / 1.08883;
+  const t = v => v > 0.008856 ? Math.cbrt(v) : 7.787 * v + 16 / 116;
+  x = t(x); y = t(y); z = t(z);
+  return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
+}
+const REF = { black: [0, 0, 0], white: [255, 255, 255], red: [255, 0, 0], yellow: [255, 255, 0] };
+function labMatcher(pal) {
+  const labs = pal.map(n => toLab(...REF[n]));
+  return (r, g, b) => {
+    const [l, a, bb] = toLab(r, g, b);
+    let best = 0, bd = Infinity;
+    labs.forEach((p, i) => { const d = 0.2 * (l - p[0]) ** 2 + 3 * (a - p[1]) ** 2 + 3 * (bb - p[2]) ** 2; if (d < bd) { bd = d; best = i; } });
+    return pal[best];
+  };
+}
+
+const KERNELS = {  // [dx, dy, weight], divisor
+  fs: [[[1,0,7],[-1,1,3],[0,1,5],[1,1,1]], 16],
+  atkinson: [[[1,0,1],[2,0,1],[-1,1,1],[0,1,1],[1,1,1],[0,2,1]], 8],
+  stucki: [[[1,0,8],[2,0,4],[-2,1,2],[-1,1,4],[0,1,8],[1,1,4],[2,1,2],[-2,2,1],[-1,2,2],[0,2,4],[1,2,2],[2,2,1]], 42],
+  jarvis: [[[1,0,7],[2,0,5],[-2,1,3],[-1,1,5],[0,1,7],[1,1,5],[2,1,3],[-2,2,1],[-1,2,3],[0,2,5],[1,2,3],[2,2,1]], 48],
+};
+const BAYER = [[0,32,8,40,2,34,10,42],[48,16,56,24,50,18,58,26],[12,44,4,36,14,46,6,38],[60,28,52,20,62,30,54,22],
+  [3,35,11,43,1,33,9,41],[51,19,59,27,49,17,57,25],[15,47,7,39,13,45,5,37],[63,31,55,23,61,29,53,21]];
+
+function processPicture(fast) {
+  const w = W(), h = H(), img = ctx.getImageData(0, 0, w, h), d = img.data;
+  const con = +$('imgContrast').value, bri = +$('imgBright').value, sat = +$('imgSat').value;
+  const pal = sat === 0 ? ['black', 'white'] : palette();
+  const f = new Float32Array(w * h * 3);
+  // Adjust: saturation around grey, then contrast around mid-grey, then brightness
+  for (let i = 0; i < w * h; i++) {
+    let r = d[i*4], g = d[i*4+1], b = d[i*4+2];
+    const y = 0.299 * r + 0.587 * g + 0.114 * b;
+    r = y + (r - y) * sat; g = y + (g - y) * sat; b = y + (b - y) * sat;
+    f[i*3] = Math.min(255, Math.max(0, (r - 128) * con + 128 + bri));
+    f[i*3+1] = Math.min(255, Math.max(0, (g - 128) * con + 128 + bri));
+    f[i*3+2] = Math.min(255, Math.max(0, (b - 128) * con + 128 + bri));
+  }
+  const match = labMatcher(pal), alg = fast ? 'none' : $('imgAlg').value, str = +$('imgStrength').value;
+  const kern = KERNELS[alg];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x;
+    // Clamp like an 8-bit buffer so diffused error can't snowball into streaks
+    const cl = v => v < 0 ? 0 : v > 255 ? 255 : v;
+    let r = cl(f[i*3]), g = cl(f[i*3+1]), b = cl(f[i*3+2]);
+    if (alg === 'bayer') { const t = (BAYER[y % 8][x % 8] / 64 * 255 - 127.5) * str; r = cl(r + t); g = cl(g + t); b = cl(b + t); }
+    const c = COLORS[match(r, g, b)];
+    d[i*4] = c[0]; d[i*4+1] = c[1]; d[i*4+2] = c[2]; d[i*4+3] = 255;
+    if (!kern) continue;
+    const ref = REF[pal[pal.findIndex(n => COLORS[n] === c)]];
+    const er = (r - ref[0]) * str, eg = (g - ref[1]) * str, eb = (b - ref[2]) * str;
+    for (const [dx, dy, wt] of kern[0]) {
+      const xx = x + dx, yy = y + dy;
+      if (xx < 0 || xx >= w || yy >= h) continue;
+      const j = (yy * w + xx) * 3, k = wt / kern[1];
+      f[j] += er * k; f[j+1] += eg * k; f[j+2] += eb * k;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+// Draw the photo with the current zoom / pan / rotation onto any 2D context
+function paintPicture(c) {
+  const s = coverScale() * +$('imgZoom').value;
+  c.save();
+  c.translate(W() / 2 + imgPanX, H() / 2 + imgPanY);
+  c.rotate(imgRot * Math.PI / 2);
+  c.scale(s, s);
+  c.imageSmoothingQuality = 'high';
+  c.drawImage(picture, -picture.width / 2, -picture.height / 2);
+  c.restore();
+}
+
+// One-click optimisation: framing, tone, colour and dithering picked from the picture itself
+function autoOptimize() {
+  if (!picture) return;
+  const notes = [];
+  // 1. Framing: fill the screen unless that would crop away a lot of the picture
+  const [pw, ph] = picDims(), lost = 1 - containScale() / coverScale();
+  imgPanX = imgPanY = 0;
+  if (lost > 0.3) { $('imgZoom').value = containScale() / coverScale(); notes.push('fit whole picture (shape differs from screen)'); }
+  else { $('imgZoom').value = 1; notes.push('filled screen'); }
+
+  // 2. Analyse the framed picture at screen resolution
+  const t = document.createElement('canvas'); t.width = W(); t.height = H();
+  const tc = t.getContext('2d', { willReadFrequently: true });
+  tc.fillStyle = '#fff'; tc.fillRect(0, 0, W(), H()); paintPicture(tc);
+  const d = tc.getImageData(0, 0, W(), H()).data, n = W() * H();
+  const hist = new Uint32Array(256), buckets = new Map();
+  let chroma = 0, redish = 0, yellowish = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    const r = d[i], g = d[i+1], b = d[i+2];
+    hist[Math.round(0.299 * r + 0.587 * g + 0.114 * b)]++;
+    chroma += Math.max(r, g, b) - Math.min(r, g, b);
+    if (r > 120 && r - g > 60 && r - b > 60) redish++;
+    if (r > 150 && g > 150 && Math.min(r, g) - b > 80) yellowish++;
+    const key = (r >> 4) << 8 | (g >> 4) << 4 | (b >> 4);
+    buckets.set(key, (buckets.get(key) || 0) + 1);
+  }
+  const pct = p => { let acc = 0; for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc >= n * p) return v; } return 255; };
+  const lo = pct(0.02), hi = pct(0.98);
+
+  // 3. Tone: stretch the darkest 2% towards black and the brightest 2% towards white,
+  //    keeping the middle of that range at mid-grey (so a capped contrast doesn't darken everything)
+  const con = Math.min(2, Math.max(0.8, 255 / Math.max(1, hi - lo)));
+  const bri = Math.min(100, Math.max(-100, Math.round(-((lo + hi) / 2 - 128) * con)));
+  $('imgContrast').value = con.toFixed(2); $('imgBright').value = bri;
+  notes.push(`contrast ${con.toFixed(2)}, brightness ${bri > 0 ? '+' : ''}${bri}`);
+
+  // 4. Colour: only use the screen's red/yellow when the picture really has them
+  const pal = palette(), redShare = redish / n, yellowShare = yellowish / n;
+  const usable = (pal.includes('red') && redShare > 0.01) || (pal.includes('yellow') && yellowShare > 0.01);
+  if (!usable) { $('imgSat').value = 0; notes.push('pure black & white'); }
+  else { $('imgSat').value = Math.min(2, Math.max(1, 60 / Math.max(1, chroma / n))).toFixed(2); notes.push(`colour boost ${(+$('imgSat').value).toFixed(2)}`); }
+
+  // 5. Dithering: flat graphics (few colours) look best undithered; photos get Floyd–Steinberg
+  const top = [...buckets.values()].sort((a, b) => b - a).slice(0, 8).reduce((a, b) => a + b, 0);
+  if (top / n > 0.85) { $('imgAlg').value = 'none'; notes.push('no dithering (graphic)'); }
+  else { $('imgAlg').value = 'fs'; $('imgStrength').value = 1; notes.push('Floyd–Steinberg (photo)'); }
+
+  $('imgOrig').checked = false;
+  $('imgAutoNote').textContent = 'Auto: ' + notes.join(' · ');
+  render();
+}
+$('imgAuto').onclick = autoOptimize;
+
+function drawImage() {
+  if (!picture) {
+    ctx.fillStyle = '#000'; ctx.font = `${H() * 0.06}px ${UI_FONT}`; ctx.textAlign = 'center';
+    ctx.fillText('Choose, drop or paste a picture', W() / 2, H() / 2); ctx.textAlign = 'left';
+    drawOverlay(); return;
+  }
+  paintPicture(ctx);
+  if (!$('imgOrig').checked) processPicture(!!imgDrag);   // flat colours while dragging, full dither on release
+  drawOverlay();
+}
+
+// Live value labels for the sliders + coalesced re-rendering
+let renderQueued = false;
+function scheduleRender() { if (!renderQueued) { renderQueued = true; requestAnimationFrame(() => { renderQueued = false; render(); }); } }
+function updateOuts() {
+  document.querySelectorAll('[data-out]').forEach(o => {
+    const v = +$(o.dataset.out).value;
+    o.textContent = o.dataset.out === 'imgPenSize' ? v : o.dataset.out === 'imgZoom' ? Math.round(v * 100) + '%' : o.dataset.out === 'imgBright' ? (v > 0 ? '+' : '') + v : v.toFixed(2);
+  });
+}
+['imgZoom', 'imgStrength', 'imgContrast', 'imgBright', 'imgSat'].forEach(id => $(id).addEventListener('input', scheduleRender));
+['imgAlg', 'imgOrig'].forEach(id => $(id).addEventListener('change', render));
+$('imgPenSize').addEventListener('input', updateOuts);
+
+// Battery: same voltage -> % curve the firmware uses for its own battery icon
+function battPercent(v) {
+  const a = (v * 1000 * 2047) / 3600;
+  if (a > 1705) return 100;
+  if (a > 1584) return Math.round(28 + (a - 1584) / (1705 - 1584) * 72);
+  if (a > 1360) return Math.round(4 + (a - 1360) / (1584 - 1360) * 24);
+  if (a > 1136) return Math.round((a - 1136) / (1360 - 1136) * 4);
+  return 0;
+}
+function drawBattery() {
+  const v = parseFloat($('battV').value);
+  $('battPct').textContent = v > 0 ? `(${battPercent(v)}%)` : '';   // % shown in the app, not on the screen
+  if (!$('battShow').checked || !(v > 0)) return;
+  // Icon only (no text): a tiny outline whose fill shows the level
+  const pct = battPercent(v), s = Math.max(1, Math.round(W() / 400));   // scale up on bigger screens
+  const iw = 14 * s, ih = 7 * s, x = W() - iw - 5 * s, y = 3 * s;
+  const inv = darkCorner(), fg = inv ? '#fff' : '#000', bg = inv ? '#000' : '#fff';  // white icon on dark layouts
+  ctx.fillStyle = bg; ctx.fillRect(x - s, y - s, iw + 4 * s, ih + 2 * s);  // keep it readable over pictures
+  ctx.fillStyle = fg;
+  ctx.lineWidth = s; ctx.strokeStyle = fg;
+  ctx.strokeRect(x + s / 2, y + s / 2, iw - s, ih - s);
+  ctx.fillRect(x + iw, y + ih / 2 - 1.5 * s, 1.5 * s, 3 * s);                   // terminal nub
+  ctx.fillStyle = pct <= 20 && palette().includes('red') ? '#dc1e1e' : fg;  // low = red
+  ctx.fillRect(x + 2 * s, y + 2 * s, Math.round((iw - 4 * s) * pct / 100), ih - 4 * s);
+  ctx.fillStyle = '#000';
+}
+
+// ---------- To-do app ----------
+let todos;
+try { todos = JSON.parse(localStorage.getItem('todos')); } catch (_) {}
+if (!Array.isArray(todos)) todos = [
+  { t: 'Submit grant report', done: false, pri: true },
+  { t: 'Call the clinic', done: false, pri: true },
+  { t: 'Buy groceries', done: false, pri: false },
+  { t: 'Review slides', done: false, pri: false },
+  { t: 'Pay electricity bill', done: true, pri: false },
+];
+const todoDark = () => $('todoTheme').value === 'dark';
+// Is the top-right corner dark in the current layout? (battery icon inverts to stay visible)
+function darkCorner() { return app === 'todo'; }   // to-do header is black in both themes
+
+function saveTodos() { try { localStorage.setItem('todos', JSON.stringify(todos)); } catch (_) {} }
+function renderTodoEditor() {
+  $('todoList').innerHTML = '';
+  todos.forEach((it, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<input type="checkbox" ${it.done ? 'checked' : ''} title="Done">
+      <input type="text" class="t">
+      <button type="button" class="pri ${it.pri ? 'on' : ''}" title="High priority (red)">!</button>
+      <button type="button" class="del" title="Delete">✕</button>`;
+    const [chk, txt, pri, del] = li.querySelectorAll('input, button');
+    txt.value = it.t;
+    if (it.done) txt.style.textDecoration = 'line-through';
+    chk.onchange = () => { it.done = chk.checked; changed(); };
+    txt.oninput = () => { it.t = txt.value; saveTodos(); render(); };
+    pri.onclick = () => { it.pri = !it.pri; changed(); };
+    del.onclick = () => { todos.splice(i, 1); changed(); };
+    $('todoList').appendChild(li);
+  });
+  function changed() { saveTodos(); renderTodoEditor(); render(); }
+}
+function addTodo() {
+  const t = $('todoNew').value.trim(); if (!t) return;
+  todos.push({ t, done: false, pri: false }); $('todoNew').value = '';
+  saveTodos(); renderTodoEditor(); render();
+}
+$('todoAdd').onclick = addTodo;
+$('todoNew').addEventListener('keydown', e => { if (e.key === 'Enter') addTodo(); });
+$('todoClearDone').onclick = () => { todos = todos.filter(t => !t.done); saveTodos(); renderTodoEditor(); render(); };
+try {
+  const s = JSON.parse(localStorage.getItem('todoOpts') || '{}');
+  if (s.title != null) $('todoTitle').value = s.title;
+  if (s.theme) $('todoTheme').value = s.theme;
+  $('todoHideDone').checked = !!s.hide; if (s.date === false) $('todoDate').checked = false;
+} catch (_) {}
+['todoTitle', 'todoTheme', 'todoHideDone', 'todoDate'].forEach(id => $(id).addEventListener('input', () => {
+  try { localStorage.setItem('todoOpts', JSON.stringify({ title: $('todoTitle').value, theme: $('todoTheme').value, hide: $('todoHideDone').checked, date: $('todoDate').checked })); } catch (_) {}
+  render();
+}));
+renderTodoEditor();
+
+function ellipsize(text, maxW) {
+  if (ctx.measureText(text).width <= maxW) return text;
+  while (text.length > 1 && ctx.measureText(text + '…').width > maxW) text = text.slice(0, -1);
+  return text + '…';
+}
+// Verdana was drawn for low-resolution screens: even strokes and open spacing survive 1-bit e-ink far better than bold UI fonts
+const TODO_FONT = UI_FONT;
+function drawTodo() {
+  const w = W(), h = H(), pad = Math.round(w * 0.04), dark = todoDark();
+  const fg = dark ? '#fff' : '#000', bg = dark ? '#000' : '#fff';
+  const hasRed = palette().includes('red'), red = hasRed ? '#dc1e1e' : fg;
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
+
+  // Header: black band with white title; date in red
+  const hh = Math.round(h * 0.18);
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, hh);
+  const now = new Date();
+  const dateTxt = $('todoDate').checked ? now.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }).toUpperCase() : '';
+  ctx.font = `bold ${Math.round(hh * 0.3)}px ${TODO_FONT}`;
+  const dw = dateTxt ? ctx.measureText(dateTxt).width : 0;
+  ctx.fillStyle = hasRed ? red : '#fff'; ctx.textAlign = 'right';
+  ctx.fillText(dateTxt, w - pad, hh * 0.72); ctx.textAlign = 'left';
+  fitText($('todoTitle').value || 'To do', w - pad * 3 - dw, hh * 0.58, 'bold', TODO_FONT);
+  ctx.fillStyle = '#fff'; ctx.fillText(ellipsize($('todoTitle').value || 'To do', w - pad * 3 - dw), pad, hh * 0.72);
+  // Red rule under the header
+  ctx.fillStyle = red; ctx.fillRect(0, hh, w, Math.max(3, Math.round(h * 0.012)));
+
+  // Items: priority first, then open, then done
+  const list = todos.filter(t => t.t.trim() && !($('todoHideDone').checked && t.done))
+    .sort((a, b) => (a.done - b.done) || (b.pri - a.pri));
+  const fh = Math.round(h * 0.11), top = hh + pad * 0.8, bottom = h - fh - pad * 0.3;
+  if (!list.length) {
+    ctx.fillStyle = fg; ctx.textAlign = 'center';
+    ctx.font = `bold ${Math.round(h * 0.12)}px ${TODO_FONT}`;
+    ctx.fillText('All done!', w / 2, (top + bottom) / 2 + h * 0.04); ctx.textAlign = 'left';
+  }
+  const n = list.length, avail = bottom - top;
+  const cols = n === 0 ? 1 : Math.min(3, Math.ceil(n / Math.max(1, Math.floor(avail / (h * 0.085)))));
+  const rows = Math.ceil(n / cols), rowH = Math.min(h * 0.13, avail / Math.max(1, rows));
+  const colW = (w - pad * 2) / cols;
+  list.forEach((it, i) => {
+    const c = Math.floor(i / rows), r = i % rows;
+    const x = pad + c * colW, y = top + r * rowH, bs = Math.round(rowH * 0.5), by = Math.round(y + (rowH - bs) / 2);
+    const lw = Math.max(2, Math.round(bs * 0.14)), col = it.pri && !it.done ? red : fg;
+    if (it.done) {
+      ctx.fillStyle = fg; ctx.fillRect(x, by, bs, bs);
+      ctx.strokeStyle = bg; ctx.lineWidth = lw; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.beginPath(); ctx.moveTo(x + bs * 0.22, by + bs * 0.52); ctx.lineTo(x + bs * 0.42, by + bs * 0.74); ctx.lineTo(x + bs * 0.8, by + bs * 0.28); ctx.stroke();
+    } else {
+      ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.strokeRect(x + lw / 2, by + lw / 2, bs - lw, bs - lw);
+    }
+    const tx = x + bs + rowH * 0.3, fs = Math.round(rowH * 0.48);
+    ctx.font = `${fs}px ${TODO_FONT}`;   // priority is shown by red, not weight (bold clumps on e-ink)
+    ctx.fillStyle = col;
+    const label = ellipsize(it.t, colW - (tx - x) - pad * 0.5);
+    ctx.fillText(label, tx, y + rowH / 2 + fs * 0.36);
+    if (it.done) { ctx.fillRect(tx, Math.round(y + rowH / 2 - lw / 2), ctx.measureText(label).width, lw); }
+  });
+
+  // Footer: progress
+  const total = todos.filter(t => t.t.trim()).length, done = todos.filter(t => t.t.trim() && t.done).length;
+  const fy = h - fh, ftxt = `${done}/${total} done`;
+  ctx.font = `${Math.round(fh * 0.45)}px ${TODO_FONT}`; ctx.fillStyle = fg;
+  ctx.fillText(ftxt, pad, fy + fh * 0.62);
+  const bx = pad + ctx.measureText(ftxt).width + pad * 0.6, bw = w - pad - bx, bh = Math.round(fh * 0.34), byy = Math.round(fy + fh * 0.62 - bh * 0.85);
+  ctx.strokeStyle = fg; ctx.lineWidth = 2; ctx.strokeRect(bx + 1, byy + 1, bw - 2, bh - 2);
+  ctx.fillStyle = red; if (total) ctx.fillRect(bx + 4, byy + 4, Math.max(0, (bw - 8) * done / total), bh - 8);
+}
+
+const APPS = { dashboard: drawDashboard, note: drawNote, quote: drawQuote, todo: drawTodo, draw: drawDraw, image: drawImage };
+function render() {
+  // Grey cut-off: white-on-black layouts lean towards white so thin white strokes survive
+  // Text apps: ~50% edges keep Verdana's shapes clean (same cut-off as the original site).
+  // Quote and Dashboard use the heavier cut-off, which suits their serif.
+  bwThreshold = app === 'image' ? 128 : (app === 'quote' || app === 'dashboard') ? 215 : 140;
+  crispColour = app !== 'image';
+  updateOuts();
+  blank(); APPS[app](); drawBattery();
+  if (app !== 'image') quantize(false);
+}
+
+// ---------- Wiring ----------
+function applyDriver() {
+  const [label, w, h] = DRIVERS[$('driverSel').value];
+  canvas.width = w; canvas.height = h;
+  $('sizeHint').textContent = `${label} · ${w}×${h}`;
+  try { localStorage.setItem('driver', $('driverSel').value); } catch (_) {}
+  $('penColor').innerHTML = palette().map(c => `<option value="${c === 'red' ? '#dc1e1e' : c === 'yellow' ? '#f0c800' : c}">${c === 'white' ? 'white (eraser)' : c}</option>`).join('');
+  $('imgPenColor').innerHTML = palette().map(c => `<option value="${c === 'red' ? '#dc1e1e' : c === 'yellow' ? '#f0c800' : c}">${c}</option>`).join('');
+  render();
+}
+for (const [id, [label]] of Object.entries(DRIVERS)) $('driverSel').add(new Option(label, id));
+try { $('driverSel').value = localStorage.getItem('driver') || '01'; $('city').value = localStorage.getItem('city') || ''; } catch (_) { $('driverSel').value = '01'; }
+$('driverSel').onchange = applyDriver;
+$('tabs').onclick = e => {
+  const b = e.target.closest('button'); if (!b) return;
+  app = b.dataset.app;
+  document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('.opts').forEach(x => x.classList.toggle('on', x.dataset.app === app));
+  canvas.style.cursor = app === 'draw' ? 'crosshair' : app === 'image' ? 'grab' : 'default';
+  render();
+};
+$('connectBtn').onclick = connect;
+$('sendBtn').onclick = send;
+$('clearBtn').onclick = clearScreen;
+$('battBtn').onclick = checkBattery;
+$('cityBtn').onclick = loadWeather;
+$('quoteBtn').onclick = () => { const n = QUOTES().length; quoteIdx = (quoteIdx % n + 1 + Math.floor(Math.random() * (n - 1))) % n; render(); };
+$('quoteMood').onchange = () => { quoteIdx = Math.floor(Math.random() * QUOTES().length); render(); };
+$('drawClear').onclick = () => { saveUndo(); drawLayer = null; render(); };
+try { $('battV').value = localStorage.getItem('battV') || ''; $('battShow').checked = localStorage.getItem('battShow') !== '0'; } catch (_) {}
+$('battV').addEventListener('input', () => { try { localStorage.setItem('battV', $('battV').value); } catch (_) {} render(); });
+$('battShow').addEventListener('change', () => { try { localStorage.setItem('battShow', $('battShow').checked ? '1' : '0'); } catch (_) {} render(); });
+['greeting', 'noteText', 'noteAccent'].forEach(id => $(id).addEventListener('input', render));
+setConn('off', 'Not connected');
+applyDriver();
+// Re-draw once the bundled Literata font has loaded (canvas can't wait for it on its own)
+Promise.all(['400 16px Literata', '700 16px Literata', 'italic 400 16px Literata'].map(f => document.fonts.load(f))).then(render).catch(() => {});
+if ($('city').value) loadWeather();
+</script>
+</body>
+</html>
