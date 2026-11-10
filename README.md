@@ -6,7 +6,7 @@ A small web app for e-ink screens running the [EPD-nRF5](https://github.com/tsl0
 
 ## Apps
 
-- **Dashboard**: date, month calendar, weather and air quality for your city
+- **Dashboard**: date, clock, month calendar, weather and air quality for your city. The clock can update itself every 5 min to 1 hour while the laptop stays connected.
 - **Note**: big auto-sized text, first line in red
 - **Away**: out-of-office card with status, "back at" time or date, message and contact line
 - **Quote**: 50 funny, 50 inspiring and 50 scientists' quotes, shuffled with no repeats, with Previous / Next
@@ -16,6 +16,8 @@ A small web app for e-ink screens running the [EPD-nRF5](https://github.com/tsl0
 - **Gallery** (public): pictures from this repository's `gallery/` folder, one tap to load and send. It keeps its own picture, so it never replaces the photo open in Image.
 
 Every app can show a small battery icon (enter the voltage from **Check battery**).
+
+**Built-in clock** switches the screen to the firmware's own clock, which runs on the screen's battery with no laptop. It fully redraws every minute, so it uses more battery; the firmware's author advises against leaving it on long-term.
 
 ## Air quality
 

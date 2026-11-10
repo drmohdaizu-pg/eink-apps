@@ -63,6 +63,7 @@
   <select id="driverSel" title="Screen driver (auto-detected on connect)"></select>
   <button id="sendBtn" disabled>Send to screen</button>
   <button id="battBtn" class="ghost" disabled title="Shows the screen's built-in calendar, which includes a battery icon and voltage">Check battery</button>
+  <button id="clockBtn" class="ghost" disabled title="Switches the screen to its own clock, which keeps running on battery without the laptop">Built-in clock</button>
   <label style="margin:0;display:flex;align-items:center;gap:6px;color:var(--ink)"><input type="checkbox" id="battShow" checked> Battery
     <input type="number" id="battV" step="0.1" min="2" max="3.6" placeholder="e.g. 3.0" title="Voltage shown by Check battery" style="width:80px;padding:6px;border:1px solid var(--line);border-radius:6px">V <b id="battPct"></b></label>
   <button id="clearBtn" class="ghost" disabled>Clear screen</button>
@@ -87,6 +88,17 @@
       <div class="row"><input type="text" id="city" placeholder="e.g. Kuala Lumpur" style="flex:1"><button class="ghost" id="cityBtn">Load</button></div>
       <label>Greeting</label>
       <input type="text" id="greeting" value="Have a good day">
+      <label>Clock</label>
+      <select id="dashClock">
+        <option value="off">Off</option>
+        <option value="static">Time when sent (doesn't move)</option>
+        <option value="5">Live: update every 5 min</option>
+        <option value="15" selected>Live: update every 15 min</option>
+        <option value="30">Live: update every 30 min</option>
+        <option value="60">Live: update every hour</option>
+        <option value="1">Live: update every minute (flashes a lot)</option>
+      </select>
+      <p class="hint" id="dashClockNote">Live updates re-send the Dashboard while the laptop stays awake and connected, with this tab open. For a clock that runs on the screen's own battery, use <b>Built-in clock</b> at the top.</p>
       <p class="hint">Shows the date, a month calendar and today's forecast (Open-Meteo, no key).</p>
     </div>
 
@@ -348,7 +360,7 @@ async function connect() {
     await write(Cmd.INIT);
     setConn('on', 'Connected · ' + (device.name || 'screen'));
     $('connectBtn').textContent = 'Disconnect';
-    $('sendBtn').disabled = $('clearBtn').disabled = $('battBtn').disabled = false;
+    $('sendBtn').disabled = $('clearBtn').disabled = $('battBtn').disabled = $('clockBtn').disabled = false;
   } catch (e) {
     log('Connect failed: ' + e.message);
     setConn('off', 'Not connected');
@@ -359,7 +371,8 @@ function onDisconnect() {
   setStatus('');
   setConn('off', 'Disconnected');
   $('connectBtn').textContent = 'Connect screen';
-  $('sendBtn').disabled = $('clearBtn').disabled = $('battBtn').disabled = true;
+  $('sendBtn').disabled = $('clearBtn').disabled = $('battBtn').disabled = $('clockBtn').disabled = true;
+  stopDashLive();
   log('Disconnected');
 }
 
@@ -479,7 +492,8 @@ function uc8159(bw, red) {
 }
 
 async function send() {
-  if (!chr) return;
+  if (!chr || sending) return;
+  sending = true;
   const t0 = performance.now();
   $('sendBtn').disabled = true;
   try {
@@ -493,7 +507,9 @@ async function send() {
     const s = ((performance.now() - t0) / 1000).toFixed(1);
     setStatus(`Sent in ${s}s — screen is refreshing`); log(`Image sent (${s}s, RLE ${rle ? 'on' : 'off'}, MTU ${mtu})`);
   } catch (e) { log('Send failed: ' + e.message); }
+  sending = false;
   $('sendBtn').disabled = !chr;
+  if (app === 'dashboard') scheduleDashLive();   // sending the Dashboard starts (or keeps) the live clock
 }
 // Switch the screen to its built-in calendar (which draws battery voltage) and sync its clock.
 // Sending any app afterwards switches it back to picture mode.
@@ -503,6 +519,35 @@ async function checkBattery() {
   await write(Cmd.SET_TIME, [(ts >>> 24) & 0xFF, (ts >>> 16) & 0xFF, (ts >>> 8) & 0xFF, ts & 0xFF, tz & 0xFF, 1]);
   log('Calendar mode on: battery shows in the top-right corner. Send an app to switch back.');
   setStatus('Showing built-in calendar with battery');
+}
+// The firmware's own clock: runs on the screen's battery with no laptop, but uses a full refresh every minute
+async function builtinClock() {
+  if (!chr) return;
+  if (!confirm('The built-in clock fully redraws the screen (with a flash) every minute, which uses more battery. ' +
+    "The firmware's author mainly intends it for clearing ghosting on older screens and advises against leaving it on long-term.\n\nSwitch to the built-in clock?")) return;
+  const ts = Math.floor(Date.now() / 1000), tz = -new Date().getTimezoneOffset() / 60;
+  await write(Cmd.SET_TIME, [(ts >>> 24) & 0xFF, (ts >>> 16) & 0xFF, (ts >>> 8) & 0xFF, ts & 0xFF, tz & 0xFF, 2]);
+  stopDashLive();
+  log('Built-in clock on: it keeps time on the screen\'s battery. Send any app to switch back.');
+  setStatus('Showing built-in clock');
+}
+// Live Dashboard clock: re-send on each N-minute boundary while connected and on the Dashboard tab
+let dashTimer = null, sending = false;
+function stopDashLive() { clearTimeout(dashTimer); dashTimer = null; }
+function scheduleDashLive() {
+  stopDashLive();
+  const v = $('dashClock').value, n = +v;
+  if (!n || !chr || app !== 'dashboard') return;
+  const now = new Date(), step = n * 60000;
+  const next = Math.ceil((now.getTime() + 1000 - now.getTimezoneOffset() * 60000) / step) * step + now.getTimezoneOffset() * 60000;
+  dashTimer = setTimeout(async () => {
+    if (chr && app === 'dashboard' && !sending) {
+      if (new Date().getMinutes() < n || n >= 60) await loadWeather();   // weather refreshed about once an hour
+      render(); await send();
+    }
+    scheduleDashLive();
+  }, next - now.getTime());
+  setStatus(`Live clock: next update at ${new Date(next).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`);
 }
 async function clearScreen() {
   if (chr && confirm('Clear the screen?')) { await write(Cmd.CLEAR); log('Clear sent'); }
@@ -625,8 +670,23 @@ ctx.fillText(now.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
   ctx.fillText($('greeting').value, pad, h - pad);
   // Divider
   ctx.fillRect(leftW, pad, 2, h - pad * 2);
+  // Clock (top of the right column): "2:45" big, "PM" small in the accent colour
+  const cx = leftW + pad, cw = w - cx - pad, cell = cw / 7;
+  let clockH = 0;
+  if ($('dashClock').value !== 'off') {
+    const [hm, ap] = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).split(' ');
+    clockH = h * 0.2;
+    ctx.font = `bold ${Math.round(clockH * 0.3)}px ${QUOTE_FONT}`; const apW = ctx.measureText(ap).width;
+    const fs = fitText(hm, cw - apW - h * 0.02, clockH * 0.72, 'bold', NUM_FONT), base = pad + fs * 0.8;
+    const tw = ctx.measureText(hm).width, x0 = cx + (cw - tw - apW - h * 0.02) / 2;
+    ctx.fillText(hm, x0, base);
+    ctx.fillStyle = accent(); ctx.font = `bold ${Math.round(clockH * 0.3)}px ${QUOTE_FONT}`;
+    ctx.fillText(ap, x0 + tw + h * 0.02, base); ctx.fillStyle = '#000';
+    clockH = fs * 0.8 + h * 0.05;
+    ctx.fillRect(cx, pad + clockH - h * 0.025, cw, 1);
+  }
   // Calendar
-  const cx = leftW + pad, cw = w - cx - pad, cell = cw / 7, top = pad + h * 0.06;
+  const top = pad + clockH + h * 0.06;
   ctx.font = `bold ${Math.round(cell * 0.38)}px ${QUOTE_FONT}`;
   ctx.textAlign = 'center';
   ['M','T','W','T','F','S','S'].forEach((d, i) => ctx.fillText(d, cx + cell * i + cell / 2, top));
@@ -1673,6 +1733,7 @@ $('tabs').onclick = e => {
   if (app === 'gallery' && !galItems) loadGallery();
   document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b));
   document.querySelectorAll('.opts').forEach(x => x.classList.toggle('on', x.dataset.app === app));
+  if (app !== 'dashboard' && dashTimer) { stopDashLive(); log('Live clock paused (left the Dashboard)'); setStatus(''); }
   canvas.style.cursor = app === 'draw' ? 'crosshair' : app === 'image' ? 'grab' : 'default';
   render();
 };
@@ -1681,6 +1742,13 @@ $('sendBtn').onclick = send;
 $('clearBtn').onclick = clearScreen;
 $('battBtn').onclick = checkBattery;
 $('cityBtn').onclick = loadWeather;
+$('clockBtn').onclick = builtinClock;
+try { const c = localStorage.getItem('dashClock'); if (c) $('dashClock').value = c; } catch (_) {}
+$('dashClock').onchange = () => {
+  try { localStorage.setItem('dashClock', $('dashClock').value); } catch (_) {}
+  stopDashLive(); render();
+  if (+$('dashClock').value && chr) setStatus('Press Send to start the live clock');
+};
 $('quoteNext').onclick = nextQuote;
 $('quotePrev').onclick = prevQuote;
 $('quoteMood').onchange = () => { updateQuoteNav(); render(); };   // each mood remembers its own place
