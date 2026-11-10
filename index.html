@@ -1411,23 +1411,39 @@ const GALLERY_REPO = 'drmohdaizu-pg/eink-apps';
 let galItems = null, galSel = null, galPic = null, galOpts = null;   // separate from the Image app's photo
 $('galLink').href = `https://github.com/${GALLERY_REPO}/tree/main/gallery`;
 async function loadGallery(force) {
-  $('galStatus').textContent = 'Loading…';
+  const btn = $('galRefresh'), before = new Set((galItems || []).map(i => i.name));
+  $('galStatus').textContent = force ? 'Checking GitHub for new pictures…' : 'Loading…';
+  btn.disabled = true;
   try {
     let items = null;
     if (!force) try { items = JSON.parse(sessionStorage.getItem('gallery')); } catch (_) {}
     if (!items) {
-      // GitHub lists the folder for us, so new uploads appear without editing any list
-      const r = await fetch(`https://api.github.com/repos/${GALLERY_REPO}/contents/gallery`, { cache: 'no-store' });
+      // GitHub lists the folder for us, so new uploads appear without editing any list.
+      // The unique "_" value skips GitHub's 60-second cache, so a fresh upload shows up straight away.
+      const r = await fetch(`https://api.github.com/repos/${GALLERY_REPO}/contents/gallery?ref=main&_=${Date.now()}`, { cache: 'no-store' });
       if (r.status === 404) items = [];
-      else if (!r.ok) throw new Error('GitHub replied ' + r.status + (r.status === 403 ? ' (too many requests, try later)' : ''));
+      else if (!r.ok) {
+        const reset = +r.headers.get('X-RateLimit-Reset');
+        throw new Error(r.status === 403 || r.status === 429
+          ? 'GitHub allows 60 checks an hour' + (reset ? `; try again after ${new Date(reset * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '')
+          : 'GitHub replied ' + r.status);
+      }
       else items = (await r.json())
         .filter(f => f.type === 'file' && /\.(png|jpe?g|gif|webp|bmp)$/i.test(f.name))
-        .map(f => ({ name: f.name, url: location.hostname.endsWith('github.io') ? 'gallery/' + encodeURIComponent(f.name) : f.download_url }));
+        // Straight from the repository (not the Pages copy, which takes a minute to update);
+        // the file's fingerprint in the address means a replaced picture is never shown stale
+        .map(f => ({ name: f.name, url: `https://raw.githubusercontent.com/${GALLERY_REPO}/main/gallery/${encodeURIComponent(f.name)}?v=${f.sha.slice(0, 10)}` }));
       try { sessionStorage.setItem('gallery', JSON.stringify(items)); } catch (_) {}
     }
     galItems = items; renderGalleryGrid();
-    $('galStatus').textContent = items.length ? `${items.length} picture${items.length > 1 ? 's' : ''}` : 'No pictures yet';
+    const count = items.length ? `${items.length} picture${items.length > 1 ? 's' : ''}` : 'No pictures yet';
+    if (force) {
+      const added = items.filter(i => !before.has(i.name)).length, removed = [...before].filter(n => !items.some(i => i.name === n)).length;
+      const change = [added && `${added} new`, removed && `${removed} removed`].filter(Boolean).join(', ') || 'nothing new';
+      $('galStatus').textContent = `${count} · ${change} (checked ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`;
+    } else $('galStatus').textContent = count;
   } catch (e) { $('galStatus').textContent = 'Could not load: ' + e.message; }
+  btn.disabled = false;
 }
 function renderGalleryGrid() {
   const g = $('galGrid'); g.innerHTML = '';
