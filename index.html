@@ -114,8 +114,12 @@ Knock loudly!</textarea>
     <div class="opts" data-app="quote">
       <label>Mood</label>
       <select id="quoteMood"><option value="funny" selected>Funny</option><option value="inspiring">Inspiring</option><option value="science">Scientists</option></select>
-      <p><button class="ghost" id="quoteBtn">Another quote</button></p>
-      <p class="hint">Picks a random quote from a built-in list.</p>
+      <div class="row" style="margin-top:10px">
+        <button class="ghost" id="quotePrev" title="Previous quote">◀ Previous</button>
+        <button class="ghost" id="quoteNext" title="Next quote">Next ▶</button>
+        <span class="hint" id="quoteCount"></span>
+      </div>
+      <p class="hint">50 quotes per mood, in a shuffled order: every quote appears once before any repeats.</p>
     </div>
 
     <div class="opts" data-app="draw">
@@ -142,13 +146,15 @@ Knock loudly!</textarea>
         <span class="hint" id="galStatus"></span>
       </div>
       <div id="galGrid"></div>
+      <p class="hint" id="galNote"></p>
       <div class="row" style="margin-top:8px"><button class="ghost" id="galEdit" disabled>Edit in Image app</button></div>
       <p class="hint">Pick a picture, then <b>Send to screen</b>. Ready-made images go out pixel-for-pixel; ordinary photos are auto-optimised.</p>
-      <p class="hint">Add pictures on GitHub: open the <b>gallery</b> folder → <b>Add file → Upload files</b> → <b>Commit</b>. They show up here within a minute. <b>The gallery is public.</b></p>
+      <p class="hint">🌐 <b>Public gallery.</b> Add pictures on GitHub: open the <b>gallery</b> folder → <b>Add file → Upload files</b> → <b>Commit</b>. They show up here within a minute. Anyone can see them, so keep personal photos in the Image app.</p>
       <p class="hint"><a id="galLink" target="_blank" rel="noopener">Open the gallery folder on GitHub ↗</a></p>
     </div>
 
     <div class="opts" data-app="image">
+      <p class="hint" style="margin-top:0">🔒 <b>Private:</b> photos opened here stay on this device and are never uploaded.</p>
       <label>Picture</label>
       <input type="file" id="imgFile" accept="image/*">
       <p class="hint">Or drag a picture onto the preview, or paste one with Ctrl+V.</p>
@@ -442,7 +448,7 @@ async function send() {
   const t0 = performance.now();
   $('sendBtn').disabled = true;
   try {
-    if ((app === 'image' || app === 'gallery') && $('imgOrig').checked) { $('imgOrig').checked = false; render(); }  // never send the un-dithered original
+    if (app === 'image' && $('imgOrig').checked) { $('imgOrig').checked = false; render(); }  // never send the un-dithered original
     quantize(false); // make sure preview == what goes to the screen
     const { bw, red } = encode(), drv = $('driverSel').value;
     await write(Cmd.INIT);
@@ -657,55 +663,200 @@ function drawNote() {
 }
 
 // Quote
+// 50 quotes per mood, no duplicates. Attributions avoid well-known misattributions.
 const FUNNY = [
-  ['I love deadlines. I love the whooshing noise they make as they go by.', 'Douglas Adams'],
-  ['Age is something that doesn\'t matter, unless you are a cheese.', 'Luis Buñuel'],
-  ['People say nothing is impossible, but I do nothing every day.', 'A. A. Milne'],
-  ['The early bird might get the worm, but the second mouse gets the cheese.', 'Steven Wright'],
-  ['I always wanted to be somebody, but now I realize I should have been more specific.', 'Lily Tomlin'],
-  ['I\'m not superstitious, but I am a little stitious.', 'Michael Scott, The Office'],
-  ['Doing nothing is very hard to do… you never know when you\'re finished.', 'Leslie Nielsen'],
-  ['I am so clever that sometimes I don\'t understand a single word of what I am saying.', 'Oscar Wilde'],
-  ['Behind every great man is a woman rolling her eyes.', 'Jim Carrey'],
-  ['I have not failed. I\'ve just found 10,000 ways that won\'t work.', 'Thomas Edison'],
-  ['If you think you are too small to make a difference, try sleeping with a mosquito.', 'Dalai Lama'],
-  ['Before you criticize someone, walk a mile in their shoes. Then you\'re a mile away and you have their shoes.', 'Jack Handey'],
+  ["I love deadlines. I love the whooshing noise they make as they go by.", "Douglas Adams"],
+  ["Age is something that doesn't matter, unless you are a cheese.", "Luis Buñuel"],
+  ["People say nothing is impossible, but I do nothing every day.", "Winnie-the-Pooh"],
+  ["The early bird might get the worm, but the second mouse gets the cheese.", "Steven Wright"],
+  ["I always wanted to be somebody, but now I realize I should have been more specific.", "Lily Tomlin"],
+  ["I'm not superstitious, but I am a little stitious.", "Michael Scott, The Office"],
+  ["Doing nothing is very hard to do… you never know when you're finished.", "Leslie Nielsen"],
+  ["I am so clever that sometimes I don't understand a single word of what I am saying.", "Oscar Wilde"],
+  ["Behind every great man is a woman rolling her eyes.", "Jim Carrey"],
+  ["I have not failed. I've just found 10,000 ways that won't work.", "Thomas Edison"],
+  ["Before you criticize someone, walk a mile in their shoes. Then you're a mile away and you have their shoes.", "Jack Handey"],
+  ["I can resist everything except temptation.", "Oscar Wilde"],
+  ["The trouble with having an open mind is that people will insist on coming along and trying to put things in it.", "Terry Pratchett"],
+  ["Light thinks it travels faster than anything, but it is wrong. The darkness has always got there first.", "Terry Pratchett"],
+  ["I never forget a face, but in your case I'll be glad to make an exception.", "Groucho Marx"],
+  ["Outside of a dog, a book is man's best friend. Inside of a dog it's too dark to read.", "Groucho Marx"],
+  ["I refuse to join any club that would have me as a member.", "Groucho Marx"],
+  ["I find television very educating. Every time somebody turns on the set, I go into the other room and read a book.", "Groucho Marx"],
+  ["The reports of my death are greatly exaggerated.", "Mark Twain"],
+  ["Never put off till tomorrow what you can do the day after tomorrow.", "Mark Twain"],
+  ["Clothes make the man. Naked people have little or no influence on society.", "Mark Twain"],
+  ["Get your facts first, and then you can distort them as you please.", "Mark Twain"],
+  ["Everything is funny, as long as it's happening to somebody else.", "Will Rogers"],
+  ["Before you marry a person, make them use a computer with slow internet to see who they really are.", "Will Ferrell"],
+  ["My fake plants died because I did not pretend to water them.", "Mitch Hedberg"],
+  ["I haven't slept for ten days, because that would be too long.", "Mitch Hedberg"],
+  ["A day without sunshine is like, you know, night.", "Steve Martin"],
+  ["If at first you don't succeed, then skydiving definitely isn't for you.", "Steven Wright"],
+  ["I intend to live forever. So far, so good.", "Steven Wright"],
+  ["Everywhere is within walking distance if you have the time.", "Steven Wright"],
+  ["A clear conscience is usually the sign of a bad memory.", "Steven Wright"],
+  ["I'm writing a book. I've got the page numbers done.", "Steven Wright"],
+  ["It's a small world, but I wouldn't want to paint it.", "Steven Wright"],
+  ["The road to success is always under construction.", "Lily Tomlin"],
+  ["I always arrive late at the office, but I make up for it by leaving early.", "Charles Lamb"],
+  ["Common sense is not so common.", "Voltaire"],
+  ["Experience is simply the name we give our mistakes.", "Oscar Wilde"],
+  ["Life is far too important a thing ever to talk seriously about.", "Oscar Wilde"],
+  ["To err is human, but to really foul things up you need a computer.", "Paul Ehrlich"],
+  ["There are two kinds of people: those who believe there are two kinds of people, and those who don't.", "Robert Benchley"],
+  ["I'm not afraid to die. I just don't want to be there when it happens.", "Woody Allen"],
+  ["Eighty percent of success is showing up.", "Woody Allen"],
+  ["I think, therefore I'm single.", "Lizz Winstead"],
+  ["Housework can't kill you, but why take a chance?", "Phyllis Diller"],
+  ["My doctor gave me six months to live, but when I couldn't pay the bill he gave me six months more.", "Walter Matthau"],
+  ["The first time I see a jogger smiling, I'll consider it.", "Joan Rivers"],
+  ["I have a new philosophy. I'm only going to dread one day at a time.", "Charles M. Schulz"],
+  ["Don't worry about the world coming to an end today. It is already tomorrow in Australia.", "Charles M. Schulz"],
+  ["I was going to have cosmetic surgery until I noticed the doctor's office was full of portraits by Picasso.", "Rita Rudner"],
+  ["When I was born I was so surprised I didn't talk for a year and a half.", "Gracie Allen"],
 ];
 const INSPIRING = [
-  ['The best way out is always through.', 'Robert Frost'],
-  ['Simplicity is the ultimate sophistication.', 'Leonardo da Vinci'],
-  ['Well done is better than well said.', 'Benjamin Franklin'],
-  ['It always seems impossible until it is done.', 'Nelson Mandela'],
-  ['What we think, we become.', 'Buddha'],
-  ['Act as if what you do makes a difference. It does.', 'William James'],
-  ['The secret of getting ahead is getting started.', 'Mark Twain'],
-  ['Knowing is not enough; we must apply.', 'Goethe'],
-  ['He who has a why to live can bear almost any how.', 'Friedrich Nietzsche'],
-  ['Wherever you go, go with all your heart.', 'Confucius'],
+  ["The best way out is always through.", "Robert Frost"],
+  ["Well done is better than well said.", "Benjamin Franklin"],
+  ["It always seems impossible until it's done.", "Nelson Mandela"],
+  ["Education is the most powerful weapon which you can use to change the world.", "Nelson Mandela"],
+  ["Act as if what you do makes a difference. It does.", "William James"],
+  ["Knowing is not enough; we must apply. Willing is not enough; we must do.", "Johann Wolfgang von Goethe"],
+  ["He who has a why to live can bear almost any how.", "Friedrich Nietzsche"],
+  ["The journey of a thousand miles begins with one step.", "Lao Tzu"],
+  ["Do what you can, with what you have, where you are.", "Theodore Roosevelt"],
+  ["The only way to do great work is to love what you do.", "Steve Jobs"],
+  ["Stay hungry, stay foolish.", "Steve Jobs"],
+  ["You miss 100% of the shots you don't take.", "Wayne Gretzky"],
+  ["Not everything that is faced can be changed, but nothing can be changed until it is faced.", "James Baldwin"],
+  ["No one can make you feel inferior without your consent.", "Eleanor Roosevelt"],
+  ["You must do the thing you think you cannot do.", "Eleanor Roosevelt"],
+  ["Hope is the thing with feathers that perches in the soul.", "Emily Dickinson"],
+  ["We know what we are, but know not what we may be.", "William Shakespeare"],
+  ["Fall seven times, stand up eight.", "Japanese proverb"],
+  ["Never give in, never give in, never, never, never.", "Winston Churchill"],
+  ["Imagination is more important than knowledge.", "Albert Einstein"],
+  ["Life is like riding a bicycle. To keep your balance you must keep moving.", "Albert Einstein"],
+  ["Strive not to be a success, but rather to be of value.", "Albert Einstein"],
+  ["The best time to plant a tree was 20 years ago. The second best time is now.", "Chinese proverb"],
+  ["Little by little, one travels far.", "Spanish proverb"],
+  ["What you do today can improve all your tomorrows.", "Ralph Marston"],
+  ["Perseverance is not a long race; it is many short races one after the other.", "Walter Elliot"],
+  ["Not all those who wander are lost.", "J. R. R. Tolkien"],
+  ["All we have to decide is what to do with the time that is given us.", "J. R. R. Tolkien"],
+  ["We are what we repeatedly do. Excellence, then, is not an act, but a habit.", "Will Durant"],
+  ["Start where you are. Use what you have. Do what you can.", "Arthur Ashe"],
+  ["A ship in harbour is safe, but that is not what ships are built for.", "John A. Shedd"],
+  ["The harder the conflict, the more glorious the triumph.", "Thomas Paine"],
+  ["Turn your wounds into wisdom.", "Oprah Winfrey"],
+  ["The most difficult thing is the decision to act; the rest is merely tenacity.", "Amelia Earhart"],
+  ["Nothing will work unless you do.", "Maya Angelou"],
+  ["You may encounter many defeats, but you must not be defeated.", "Maya Angelou"],
+  ["If you want to lift yourself up, lift up someone else.", "Booker T. Washington"],
+  ["No act of kindness, no matter how small, is ever wasted.", "Aesop"],
+  ["Patience is bitter, but its fruit is sweet.", "Jean-Jacques Rousseau"],
+  ["It is not the mountain we conquer, but ourselves.", "Edmund Hillary"],
+  ["Darkness cannot drive out darkness; only light can do that. Hate cannot drive out hate; only love can do that.", "Martin Luther King Jr."],
+  ["If you can't fly, then run. If you can't run, then walk. If you can't walk, then crawl. But keep moving forward.", "Martin Luther King Jr."],
+  ["The time is always right to do what is right.", "Martin Luther King Jr."],
+  ["Our greatest glory is not in never falling, but in rising every time we fall.", "Oliver Goldsmith"],
+  ["Well begun is half done.", "Aristotle"],
+  ["It is not how long, but how well you have lived that matters.", "Seneca"],
+  ["If one does not know to which port one is sailing, no wind is favourable.", "Seneca"],
+  ["Difficulties strengthen the mind, as labour does the body.", "Seneca"],
+  ["The only impossible journey is the one you never begin.", "Tony Robbins"],
+  ["Happiness is not something ready made. It comes from your own actions.", "Dalai Lama"],
 ];
 const SCIENCE = [
-  ['Nothing in life is to be feared, it is only to be understood.', 'Marie Curie'],
-  ['The important thing is not to stop questioning.', 'Albert Einstein'],
-  ['If I have seen further it is by standing on the shoulders of giants.', 'Isaac Newton'],
-  ['The first principle is that you must not fool yourself, and you are the easiest person to fool.', 'Richard Feynman'],
-  ['What I cannot create, I do not understand.', 'Richard Feynman'],
-  ['In the fields of observation, chance favours only the prepared mind.', 'Louis Pasteur'],
-  ['Science knows no country, because knowledge belongs to humanity.', 'Louis Pasteur'],
-  ['Science is a way of thinking much more than it is a body of knowledge.', 'Carl Sagan'],
-  ['Extraordinary claims require extraordinary evidence.', 'Carl Sagan'],
-  ['Nothing in biology makes sense except in the light of evolution.', 'Theodosius Dobzhansky'],
-  ['Research is to see what everybody else has seen, and to think what nobody else has thought.', 'Albert Szent-Györgyi'],
-  ['Equipped with his five senses, man explores the universe around him and calls the adventure Science.', 'Edwin Hubble'],
-  ['The good physician treats the disease; the great physician treats the patient who has the disease.', 'William Osler'],
-  ['Medicine is a science of uncertainty and an art of probability.', 'William Osler'],
-  ["The good thing about science is that it's true whether or not you believe in it.", 'Neil deGrasse Tyson'],
-  ['I was taught that the way of progress was neither swift nor easy.', 'Marie Curie'],
+  ["Nothing in life is to be feared, it is only to be understood.", "Marie Curie"],
+  ["Be less curious about people and more curious about ideas.", "Marie Curie"],
+  ["Life is not easy for any of us. But what of that? We must have perseverance and above all confidence in ourselves.", "Marie Curie"],
+  ["I was taught that the way of progress was neither swift nor easy.", "Marie Curie"],
+  ["The important thing is not to stop questioning.", "Albert Einstein"],
+  ["I have no special talents. I am only passionately curious.", "Albert Einstein"],
+  ["The most beautiful thing we can experience is the mysterious. It is the source of all true art and science.", "Albert Einstein"],
+  ["If I have seen further it is by standing on the shoulders of giants.", "Isaac Newton"],
+  ["The first principle is that you must not fool yourself, and you are the easiest person to fool.", "Richard Feynman"],
+  ["What I cannot create, I do not understand.", "Richard Feynman"],
+  ["Study hard what interests you the most in the most undisciplined, irreverent and original manner possible.", "Richard Feynman"],
+  ["If you thought that science was certain, well, that is just an error on your part.", "Richard Feynman"],
+  ["In the fields of observation, chance favours only the prepared mind.", "Louis Pasteur"],
+  ["Science knows no country, because knowledge belongs to humanity.", "Louis Pasteur"],
+  ["Science is a way of thinking much more than it is a body of knowledge.", "Carl Sagan"],
+  ["Extraordinary claims require extraordinary evidence.", "Carl Sagan"],
+  ["We are a way for the cosmos to know itself.", "Carl Sagan"],
+  ["Nothing in biology makes sense except in the light of evolution.", "Theodosius Dobzhansky"],
+  ["Research is to see what everybody else has seen, and to think what nobody else has thought.", "Albert Szent-Györgyi"],
+  ["Equipped with his five senses, man explores the universe around him and calls the adventure Science.", "Edwin Hubble"],
+  ["The good physician treats the disease; the great physician treats the patient who has the disease.", "William Osler"],
+  ["Medicine is a science of uncertainty and an art of probability.", "William Osler"],
+  ["Listen to your patient, he is telling you the diagnosis.", "William Osler"],
+  ["The good thing about science is that it's true whether or not you believe in it.", "Neil deGrasse Tyson"],
+  ["The universe is under no obligation to make sense to you.", "Neil deGrasse Tyson"],
+  ["The saddest aspect of life right now is that science gathers knowledge faster than society gathers wisdom.", "Isaac Asimov"],
+  ["We are just an advanced breed of monkeys on a minor planet of a very average star. But we can understand the Universe.", "Stephen Hawking"],
+  ["Look up at the stars and not down at your feet.", "Stephen Hawking"],
+  ["The universe is not only queerer than we suppose, but queerer than we can suppose.", "J. B. S. Haldane"],
+  ["An expert is a person who has made all the mistakes that can be made in a very narrow field.", "Niels Bohr"],
+  ["Genius is one percent inspiration and ninety-nine percent perspiration.", "Thomas Edison"],
+  ["All truths are easy to understand once they are discovered; the point is to discover them.", "Galileo Galilei"],
+  ["Ignorance more frequently begets confidence than does knowledge.", "Charles Darwin"],
+  ["A man who dares to waste one hour of time has not discovered the value of life.", "Charles Darwin"],
+  ["Nothing is too wonderful to be true, if it be consistent with the laws of nature.", "Michael Faraday"],
+  ["The important thing in science is not so much to obtain new facts as to discover new ways of thinking about them.", "William Lawrence Bragg"],
+  ["The scientist is not a person who gives the right answers, he is one who asks the right questions.", "Claude Lévi-Strauss"],
+  ["Science is a beautiful gift to humanity; we should not distort it.", "A. P. J. Abdul Kalam"],
+  ["Dream is not that which you see while sleeping, it is something that does not let you sleep.", "A. P. J. Abdul Kalam"],
+  ["Knowledge is power.", "Francis Bacon"],
+  ["Wherever the art of medicine is loved, there is also a love of humanity.", "Hippocrates"],
+  ["We especially need imagination in science. It is not all mathematics, nor all logic, but it is somewhat beauty and poetry.", "Maria Mitchell"],
+  ["Don't let anyone rob you of your imagination, your creativity, or your curiosity.", "Mae Jemison"],
+  ["Science and everyday life cannot and should not be separated.", "Rosalind Franklin"],
+  ["What we observe is not nature itself, but nature exposed to our method of questioning.", "Werner Heisenberg"],
+  ["The duty of the man who investigates the writings of scientists, if learning the truth is his goal, is to make himself an enemy of all that he reads.", "Ibn al-Haytham"],
+  ["The knowledge of anything, since all things have causes, is not acquired or complete unless it is known by its causes.", "Ibn Sina (Avicenna)"],
+  ["Science is the poetry of reality.", "Richard Dawkins"],
+  ["All science is either physics or stamp collecting.", "Ernest Rutherford"],
+  ["An experiment is a question which science poses to nature, and a measurement is the recording of nature's answer.", "Max Planck"],
 ];
 const QUOTE_SETS = { funny: FUNNY, inspiring: INSPIRING, science: SCIENCE };
 const QUOTES = () => QUOTE_SETS[$('quoteMood').value] || FUNNY;
-let quoteIdx = Math.floor(Math.random() * FUNNY.length);
+
+// Each mood has its own shuffled order: Next walks through every quote once before any repeats,
+// Previous steps back through what you've already seen.
+const quoteDeck = {};
+function shuffledOrder(n, avoidFirst) {
+  const o = [...Array(n).keys()];
+  for (let i = n - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [o[i], o[j]] = [o[j], o[i]]; }
+  if (n > 1 && o[0] === avoidFirst) [o[0], o[1]] = [o[1], o[0]];   // no back-to-back repeat between rounds
+  return o;
+}
+function deck() {
+  const mood = $('quoteMood').value;
+  if (!quoteDeck[mood]) quoteDeck[mood] = { order: shuffledOrder(QUOTES().length), pos: 0, history: [] };
+  return quoteDeck[mood];
+}
+function currentQuote() { const d = deck(); return QUOTES()[d.history.length ? d.history[d.pos] : (d.history.push(d.order[0]), d.order[0])]; }
+function nextQuote() {
+  const d = deck(), list = QUOTES();
+  if (d.pos < d.history.length - 1) { d.pos++; }                     // re-walk forward after going back
+  else {
+    let seen = d.history.length % list.length;                         // position inside the current round
+    if (seen === 0) d.order = shuffledOrder(list.length, d.history[d.history.length - 1]);
+    d.history.push(d.order[seen]); d.pos = d.history.length - 1;
+  }
+  updateQuoteNav(); render();
+}
+function prevQuote() { const d = deck(); if (d.pos > 0) { d.pos--; updateQuoteNav(); render(); } }
+function updateQuoteNav() {
+  const d = deck(), n = QUOTES().length;
+  if (!d.history.length) currentQuote();
+  $('quotePrev').disabled = d.pos === 0;
+  $('quoteCount').textContent = `${(d.pos % n) + 1} / ${n}`;
+}
 function drawQuote() {
-  const list = QUOTES(), [q, a] = list[quoteIdx % list.length], pad = W() * 0.1;
+  const [q, a] = currentQuote(), pad = W() * 0.1;
   ctx.fillStyle = accent();
   ctx.font = `bold ${H() * 0.35}px ${QUOTE_FONT}`;
   ctx.fillText('“', pad * 0.6, H() * 0.36);
@@ -837,9 +988,9 @@ document.addEventListener('paste', e => {
 });
 
 // Picture size after rotation, and the scale that makes it cover the screen
-function picDims() { return imgRot % 2 ? [picture.height, picture.width] : [picture.width, picture.height]; }
-function coverScale() { const [pw, ph] = picDims(); return Math.max(W() / pw, H() / ph); }
-function containScale() { const [pw, ph] = picDims(); return Math.min(W() / pw, H() / ph); }
+function picDims(pic = picture, rot = imgRot) { return rot % 2 ? [pic.height, pic.width] : [pic.width, pic.height]; }
+function coverScale(pic, rot) { const [pw, ph] = picDims(pic, rot); return Math.max(W() / pw, H() / ph); }
+function containScale(pic, rot) { const [pw, ph] = picDims(pic, rot); return Math.min(W() / pw, H() / ph); }
 
 $('imgFill').onclick = () => { $('imgZoom').value = 1; imgPanX = imgPanY = 0; render(); };
 $('imgFitBtn').onclick = () => { if (!picture) return; $('imgZoom').value = containScale() / coverScale(); imgPanX = imgPanY = 0; render(); };
@@ -970,9 +1121,12 @@ const KERNELS = {  // [dx, dy, weight], divisor
 const BAYER = [[0,32,8,40,2,34,10,42],[48,16,56,24,50,18,58,26],[12,44,4,36,14,46,6,38],[60,28,52,20,62,30,54,22],
   [3,35,11,43,1,33,9,41],[51,19,59,27,49,17,57,25],[15,47,7,39,13,45,5,37],[63,31,55,23,61,29,53,21]];
 
-function processPicture(fast) {
+function imageAppSettings() {
+  return { con: +$('imgContrast').value, bri: +$('imgBright').value, sat: +$('imgSat').value, alg: $('imgAlg').value, str: +$('imgStrength').value };
+}
+function processPicture(fast, opts = imageAppSettings()) {
   const w = W(), h = H(), img = ctx.getImageData(0, 0, w, h), d = img.data;
-  const con = +$('imgContrast').value, bri = +$('imgBright').value, sat = +$('imgSat').value;
+  const { con, bri, sat } = opts;
   const pal = sat === 0 ? ['black', 'white'] : palette();
   const f = new Float32Array(w * h * 3);
   // Adjust: saturation around grey, then contrast around mid-grey, then brightness
@@ -984,7 +1138,7 @@ function processPicture(fast) {
     f[i*3+1] = Math.min(255, Math.max(0, (g - 128) * con + 128 + bri));
     f[i*3+2] = Math.min(255, Math.max(0, (b - 128) * con + 128 + bri));
   }
-  const match = labMatcher(pal), alg = fast ? 'none' : $('imgAlg').value, str = +$('imgStrength').value;
+  const match = labMatcher(pal), alg = fast ? 'none' : opts.alg, str = opts.str;
   const kern = KERNELS[alg];
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const i = y * w + x;
@@ -1008,31 +1162,30 @@ function processPicture(fast) {
 }
 
 // Draw the photo with the current zoom / pan / rotation onto any 2D context
-function paintPicture(c) {
-  const s = coverScale() * +$('imgZoom').value;
+function paintPicture(c, pic = picture, zoom = +$('imgZoom').value, rot = imgRot, panX = imgPanX, panY = imgPanY) {
+  const s = coverScale(pic, rot) * zoom;
   c.save();
-  c.translate(W() / 2 + imgPanX, H() / 2 + imgPanY);
-  c.rotate(imgRot * Math.PI / 2);
+  c.translate(W() / 2 + panX, H() / 2 + panY);
+  c.rotate(rot * Math.PI / 2);
   c.scale(s, s);
   c.imageSmoothingQuality = 'high';
-  c.drawImage(picture, -picture.width / 2, -picture.height / 2);
+  c.drawImage(pic, -pic.width / 2, -pic.height / 2);
   c.restore();
 }
 
-// One-click optimisation: framing, tone, colour and dithering picked from the picture itself
-function autoOptimize() {
-  if (!picture) return;
+// One-click optimisation: framing, tone, colour and dithering picked from the picture itself.
+// Returns settings without touching any app, so the Image app and the Gallery each keep their own.
+function analyzePicture(pic, rot = 0) {
   const notes = [];
   // 1. Framing: fill the screen unless that would crop away a lot of the picture
-  const [pw, ph] = picDims(), lost = 1 - containScale() / coverScale();
-  imgPanX = imgPanY = 0;
-  if (lost > 0.3) { $('imgZoom').value = containScale() / coverScale(); notes.push('fit whole picture (shape differs from screen)'); }
-  else { $('imgZoom').value = 1; notes.push('filled screen'); }
+  const lost = 1 - containScale(pic, rot) / coverScale(pic, rot);
+  const zoom = lost > 0.3 ? containScale(pic, rot) / coverScale(pic, rot) : 1;
+  notes.push(lost > 0.3 ? 'fit whole picture (shape differs from screen)' : 'filled screen');
 
   // 2. Analyse the framed picture at screen resolution
   const t = document.createElement('canvas'); t.width = W(); t.height = H();
   const tc = t.getContext('2d', { willReadFrequently: true });
-  tc.fillStyle = '#fff'; tc.fillRect(0, 0, W(), H()); paintPicture(tc);
+  tc.fillStyle = '#fff'; tc.fillRect(0, 0, W(), H()); paintPicture(tc, pic, zoom, rot, 0, 0);
   const d = tc.getImageData(0, 0, W(), H()).data, n = W() * H();
   const hist = new Uint32Array(256), buckets = new Map();
   let chroma = 0, redish = 0, yellowish = 0;
@@ -1052,22 +1205,29 @@ function autoOptimize() {
   //    keeping the middle of that range at mid-grey (so a capped contrast doesn't darken everything)
   const con = Math.min(2, Math.max(0.8, 255 / Math.max(1, hi - lo)));
   const bri = Math.min(100, Math.max(-100, Math.round(-((lo + hi) / 2 - 128) * con)));
-  $('imgContrast').value = con.toFixed(2); $('imgBright').value = bri;
   notes.push(`contrast ${con.toFixed(2)}, brightness ${bri > 0 ? '+' : ''}${bri}`);
 
   // 4. Colour: only use the screen's red/yellow when the picture really has them
-  const pal = palette(), redShare = redish / n, yellowShare = yellowish / n;
-  const usable = (pal.includes('red') && redShare > 0.01) || (pal.includes('yellow') && yellowShare > 0.01);
-  if (!usable) { $('imgSat').value = 0; notes.push('pure black & white'); }
-  else { $('imgSat').value = Math.min(2, Math.max(1, 60 / Math.max(1, chroma / n))).toFixed(2); notes.push(`colour boost ${(+$('imgSat').value).toFixed(2)}`); }
+  const pal = palette();
+  const usable = (pal.includes('red') && redish / n > 0.01) || (pal.includes('yellow') && yellowish / n > 0.01);
+  const sat = usable ? Math.min(2, Math.max(1, 60 / Math.max(1, chroma / n))) : 0;
+  notes.push(usable ? `colour boost ${sat.toFixed(2)}` : 'pure black & white');
 
   // 5. Dithering: flat graphics (few colours) look best undithered; photos get Floyd–Steinberg
   const top = [...buckets.values()].sort((a, b) => b - a).slice(0, 8).reduce((a, b) => a + b, 0);
-  if (top / n > 0.85) { $('imgAlg').value = 'none'; notes.push('no dithering (graphic)'); }
-  else { $('imgAlg').value = 'fs'; $('imgStrength').value = 1; notes.push('Floyd–Steinberg (photo)'); }
+  const alg = top / n > 0.85 ? 'none' : 'fs';
+  notes.push(alg === 'none' ? 'no dithering (graphic)' : 'Floyd–Steinberg (photo)');
 
+  return { zoom, con: +con.toFixed(2), bri, sat: +sat.toFixed(2), alg, str: 1, notes };
+}
+function autoOptimize() {
+  if (!picture) return;
+  const a = analyzePicture(picture, imgRot);
+  imgPanX = imgPanY = 0;
+  $('imgZoom').value = a.zoom; $('imgContrast').value = a.con; $('imgBright').value = a.bri;
+  $('imgSat').value = a.sat; $('imgAlg').value = a.alg; $('imgStrength').value = a.str;
   $('imgOrig').checked = false;
-  $('imgAutoNote').textContent = 'Auto: ' + notes.join(' · ');
+  $('imgAutoNote').textContent = 'Auto: ' + a.notes.join(' · ');
   render();
 }
 $('imgAuto').onclick = autoOptimize;
@@ -1075,12 +1235,12 @@ $('imgAuto').onclick = autoOptimize;
 function drawImage() {
   if (!picture) {
     ctx.fillStyle = '#000'; ctx.font = `${H() * 0.06}px ${UI_FONT}`; ctx.textAlign = 'center';
-    ctx.fillText(app === 'gallery' ? 'Pick a picture from the gallery' : 'Choose, drop or paste a picture', W() / 2, H() / 2); ctx.textAlign = 'left';
+    ctx.fillText('Choose, drop or paste a picture', W() / 2, H() / 2); ctx.textAlign = 'left';
     drawOverlay(); return;
   }
   paintPicture(ctx);
   if (!$('imgOrig').checked) processPicture(!!imgDrag);   // flat colours while dragging, full dither on release
-  if (app === 'image') drawOverlay();   // text/drawing belongs to the Image app
+  drawOverlay();
 }
 
 // Live value labels for the sliders + coalesced re-rendering
@@ -1248,7 +1408,7 @@ function drawTodo() {
 
 // ---------- Gallery: pictures stored in the repository's gallery/ folder ----------
 const GALLERY_REPO = 'drmohdaizu-pg/eink-apps';
-let galItems = null, galSel = null;
+let galItems = null, galSel = null, galPic = null, galOpts = null;   // separate from the Image app's photo
 $('galLink').href = `https://github.com/${GALLERY_REPO}/tree/main/gallery`;
 async function loadGallery(force) {
   $('galStatus').textContent = 'Loading…';
@@ -1295,20 +1455,38 @@ function pickGallery(it) {
   galSel = it.name; renderGalleryGrid();
   const img = new Image(); img.crossOrigin = 'anonymous';
   img.onload = () => {
-    picture = img; imgRot = 0; imgPanX = imgPanY = 0; $('imgZoom').value = 1;
-    $('imgAuto').disabled = false; $('imgOrig').checked = false; $('galEdit').disabled = false;
-    if (isScreenReady(img)) {
-      $('imgAlg').value = 'none'; $('imgContrast').value = 1; $('imgBright').value = 0; $('imgSat').value = 1;
-      $('imgAutoNote').textContent = 'Ready-made for this screen: sent exactly as is.';
-      render();
-    } else autoOptimize();
+    galPic = img; $('galEdit').disabled = false;
+    // Ready-made pictures pass through untouched; anything else gets its own auto settings
+    galOpts = isScreenReady(img)
+      ? { zoom: 1, con: 1, bri: 0, sat: 1, alg: 'none', str: 1, notes: ['ready-made for this screen: sent exactly as is'] }
+      : analyzePicture(img);
+    $('galNote').textContent = galOpts.notes[0].charAt(0).toUpperCase() + galOpts.notes.join(' · ').slice(1);
+    render();
     log('Gallery: ' + it.name);
   };
   img.onerror = () => log('Could not load ' + it.name);
   img.src = it.url;
 }
+function drawGallery() {
+  if (!galPic) {
+    ctx.fillStyle = '#000'; ctx.font = `${H() * 0.06}px ${UI_FONT}`; ctx.textAlign = 'center';
+    ctx.fillText('Pick a picture from the gallery', W() / 2, H() / 2); ctx.textAlign = 'left'; return;
+  }
+  paintPicture(ctx, galPic, galOpts.zoom, 0, 0, 0);
+  processPicture(false, galOpts);
+}
+// Copy the gallery picture into the Image app for editing (only when you ask)
+function editGalleryInImage() {
+  if (!galPic) return;
+  if (picture && picture !== galPic && !confirm('Open this gallery picture in the Image app? It replaces the photo currently open there.')) return;
+  picture = galPic; imgRot = 0; imgPanX = imgPanY = 0;
+  $('imgZoom').value = galOpts.zoom; $('imgContrast').value = galOpts.con; $('imgBright').value = galOpts.bri;
+  $('imgSat').value = galOpts.sat; $('imgAlg').value = galOpts.alg; $('imgStrength').value = galOpts.str;
+  $('imgOrig').checked = false; $('imgAuto').disabled = false; $('imgAutoNote').textContent = '';
+  document.querySelector('#tabs [data-app=image]').click();
+}
 $('galRefresh').onclick = () => loadGallery(true);
-$('galEdit').onclick = () => document.querySelector('#tabs [data-app=image]').click();
+$('galEdit').onclick = editGalleryInImage;
 
 // Download exactly what the screen will show (without the battery icon)
 $('imgSave').onclick = () => {
@@ -1321,7 +1499,7 @@ $('imgSave').onclick = () => {
   }, 'image/png');
 };
 
-const APPS = { dashboard: drawDashboard, note: drawNote, quote: drawQuote, todo: drawTodo, draw: drawDraw, image: drawImage, gallery: drawImage };
+const APPS = { dashboard: drawDashboard, note: drawNote, quote: drawQuote, todo: drawTodo, draw: drawDraw, image: drawImage, gallery: drawGallery };
 function render() {
   // Grey cut-off: white-on-black layouts lean towards white so thin white strokes survive
   // Text apps: ~50% edges keep Verdana's shapes clean (same cut-off as the original site).
@@ -1361,8 +1539,10 @@ $('sendBtn').onclick = send;
 $('clearBtn').onclick = clearScreen;
 $('battBtn').onclick = checkBattery;
 $('cityBtn').onclick = loadWeather;
-$('quoteBtn').onclick = () => { const n = QUOTES().length; quoteIdx = (quoteIdx % n + 1 + Math.floor(Math.random() * (n - 1))) % n; render(); };
-$('quoteMood').onchange = () => { quoteIdx = Math.floor(Math.random() * QUOTES().length); render(); };
+$('quoteNext').onclick = nextQuote;
+$('quotePrev').onclick = prevQuote;
+$('quoteMood').onchange = () => { updateQuoteNav(); render(); };   // each mood remembers its own place
+updateQuoteNav();
 $('drawClear').onclick = () => { saveUndo(); drawLayer = null; render(); };
 try { $('battV').value = localStorage.getItem('battV') || ''; $('battShow').checked = localStorage.getItem('battShow') !== '0'; } catch (_) {}
 $('battV').addEventListener('input', () => { try { localStorage.setItem('battV', $('battV').value); } catch (_) {} render(); });
