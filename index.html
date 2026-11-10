@@ -74,6 +74,7 @@
     <div class="tabs" id="tabs">
       <button data-app="dashboard" class="on">Dashboard</button>
       <button data-app="note">Note</button>
+      <button data-app="away">Away</button>
       <button data-app="quote">Quote</button>
       <button data-app="todo">To-do</button>
       <button data-app="draw">Draw</button>
@@ -109,6 +110,40 @@
 Knock loudly!</textarea>
       <label><input type="checkbox" id="noteAccent" checked> Accent colour title (first line)</label>
       <p class="hint">Text is auto-sized to fill the screen.</p>
+    </div>
+
+    <div class="opts" data-app="away">
+      <label>Status</label>
+      <select id="awayPreset">
+        <option value="Out of office">Out of office</option>
+        <option value="On leave">On leave</option>
+        <option value="In a meeting">In a meeting</option>
+        <option value="In clinic">In clinic</option>
+        <option value="At lunch">At lunch</option>
+        <option value="Prayer break">Prayer break</option>
+        <option value="Working from home">Working from home</option>
+        <option value="Do not disturb">Do not disturb</option>
+        <option value="Back soon">Back soon</option>
+      </select>
+      <label>Heading (edit freely)</label>
+      <input type="text" id="awayHead" value="Out of office">
+      <label><input type="checkbox" id="awayBackOn" checked> Show when I'm back</label>
+      <input type="datetime-local" id="awayBack" style="width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px">
+      <div class="row" style="margin-top:6px">
+        <button class="ghost" data-away-add="30">+30 min</button>
+        <button class="ghost" data-away-add="60">+1 hr</button>
+        <button class="ghost" data-away-add="120">+2 hr</button>
+        <button class="ghost" data-away-add="tomorrow">Tomorrow 9 am</button>
+      </div>
+      <label><input type="checkbox" id="awayDateOnly"> Date only (for leave)</label>
+      <label>Message</label>
+      <textarea id="awayMsg" style="min-height:70px">Sorry I missed you. Please leave a note or come back later.</textarea>
+      <label>Contact line (optional)</label>
+      <input type="text" id="awayContact" value="" placeholder="e.g. Urgent: call ext. 1234">
+      <label>Banner colour</label>
+      <select id="awayStyle"><option value="red" selected>Red banner</option><option value="black">Black banner</option></select>
+      <label><input type="checkbox" id="awayStamp" checked> Show "updated" time</label>
+      <p class="hint">"Tomorrow" and weekday names are worked out when you press Send, so send again if the card stays up over several days.</p>
     </div>
 
     <div class="opts" data-app="quote">
@@ -1515,7 +1550,98 @@ $('imgSave').onclick = () => {
   }, 'image/png');
 };
 
-const APPS = { dashboard: drawDashboard, note: drawNote, quote: drawQuote, todo: drawTodo, draw: drawDraw, image: drawImage, gallery: drawGallery };
+// ---------- Away card: out-of-office notice ----------
+const AWAY_IDS = ['awayPreset', 'awayHead', 'awayBackOn', 'awayBack', 'awayDateOnly', 'awayMsg', 'awayContact', 'awayStyle', 'awayStamp'];
+function saveAway() {
+  const o = {}; AWAY_IDS.forEach(id => { const el = $(id); o[id] = el.type === 'checkbox' ? el.checked : el.value; });
+  try { localStorage.setItem('awayOpts', JSON.stringify(o)); } catch (_) {}
+}
+try {
+  const o = JSON.parse(localStorage.getItem('awayOpts') || '{}');
+  AWAY_IDS.forEach(id => { if (o[id] == null) return; const el = $(id); if (el.type === 'checkbox') el.checked = o[id]; else el.value = o[id]; });
+} catch (_) {}
+const localISO = d => new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+if (!$('awayBack').value) { const d = new Date(Date.now() + 3600000); d.setMinutes(Math.ceil(d.getMinutes() / 15) * 15, 0, 0); $('awayBack').value = localISO(d); }
+AWAY_IDS.forEach(id => $(id).addEventListener('input', () => {
+  if (id === 'awayPreset') $('awayHead').value = $('awayPreset').value;
+  saveAway(); render();
+}));
+document.querySelectorAll('[data-away-add]').forEach(b => b.onclick = () => {
+  let d;
+  if (b.dataset.awayAdd === 'tomorrow') { d = new Date(); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0); }
+  else { d = new Date(Date.now() + b.dataset.awayAdd * 60000); d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5, 0, 0); }   // round to 5 min
+  $('awayBack').value = localISO(d); $('awayBackOn').checked = true;
+  saveAway(); render();
+});
+// "3:00 PM" today, "Tomorrow, 9:00 AM", "Monday, 9:00 AM" this week, else "Mon 17 Nov, 9:00 AM"
+function awayBackText(d, dateOnly) {
+  const day = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((day(d) - day(new Date())) / 864e5);
+  const t = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const dayTxt = diff === 0 ? 'Today' : diff === 1 ? 'Tomorrow'
+    : diff > 1 && diff < 7 ? d.toLocaleDateString('en-GB', { weekday: 'long' })
+    : d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+  if (dateOnly) return diff > 1 && diff < 7 ? d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' }) : dayTxt;
+  return diff === 0 ? t : `${dayTxt}, ${t}`;
+}
+function drawAway() {
+  const w = W(), h = H(), pad = Math.round(w * 0.05);
+  const accent = $('awayStyle').value === 'red' && palette().includes('red') ? '#dc1e1e' : '#000';
+  const head = $('awayHead').value.trim() || 'Away';
+  const back = $('awayBackOn').checked && $('awayBack').value ? new Date($('awayBack').value) : null;
+  const msg = $('awayMsg').value.trim(), contact = $('awayContact').value.trim();
+  const stamp = $('awayStamp').checked ? 'Updated ' + new Date().toLocaleString('en-GB', { day: 'numeric', month: 'short' }) + ', ' + new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '';
+
+  // Banner: heading in white on red (or black)
+  const bh = Math.round(h * 0.28);
+  ctx.fillStyle = accent; ctx.fillRect(0, 0, w, bh);
+  ctx.fillStyle = '#fff'; ctx.textAlign = 'center';
+  const hs = fitText(head, w - pad * 2 - w * 0.06, bh * 0.5, 'bold', UI_FONT);
+  ctx.fillText(head, w / 2, bh / 2 + hs * 0.37);
+
+  // Footer: contact (bold) and the "updated" time, on a thin rule
+  const lines = [contact, stamp].filter(Boolean);
+  const fs = Math.round(h * 0.05), fh = lines.length ? Math.round(fs * 1.5 * lines.length + pad * 0.5) : 0;
+  const fTop = h - fh;
+  if (lines.length) {
+    ctx.fillStyle = '#000'; ctx.fillRect(pad, fTop, w - pad * 2, 2);
+    let y = fTop + pad * 0.3 + fs * 1.15;
+    if (contact) {
+      ctx.font = `bold ${fitText(contact, w - pad * 2, fs * 1.1, 'bold', UI_FONT)}px ${UI_FONT}`;
+      ctx.fillText(contact, w / 2, y); y += fs * 1.5;
+    }
+    if (stamp) { ctx.font = `${Math.round(fs * 0.8)}px ${UI_FONT}`; ctx.fillText(stamp, w / 2, y - fs * 0.1); }
+  }
+
+  // Middle: "BACK" + time, then the message, centred in the space left
+  const top = bh + pad * 0.6, bottom = fTop - pad * 0.5, avail = bottom - top;
+  const backTxt = back ? awayBackText(back, $('awayDateOnly').checked) : '';
+  const labS = Math.round(h * 0.05), bigS = backTxt ? fitText(backTxt, w - pad * 2, h * (msg ? 0.15 : 0.22), 'bold', NUM_FONT) : 0;
+  const backH = backTxt ? labS * 1.4 + bigS * 1.05 : 0;
+  let msgS = 0, msgLines = [];
+  if (msg) {
+    const room = avail - backH - (backTxt ? pad * 0.6 : 0);
+    for (msgS = Math.round(h * 0.075); msgS > 11; msgS--) {
+      ctx.font = `${msgS}px ${UI_FONT}`; msgLines = wrapLines(msg, w - pad * 2);
+      if (msgLines.length * msgS * 1.3 <= room) break;
+    }
+    ctx.font = `${msgS}px ${UI_FONT}`; msgLines = wrapLines(msg, w - pad * 2);
+  }
+  const msgH = msgLines.length * msgS * 1.3, total = backH + (backTxt && msg ? pad * 0.6 : 0) + msgH;
+  let y = top + Math.max(0, (avail - total) / 2);
+  if (backTxt) {
+    ctx.fillStyle = accent; ctx.font = `bold ${labS}px ${UI_FONT}`;
+    ctx.fillText($('awayDateOnly').checked ? 'BACK ON' : 'BACK AT', w / 2, y + labS);
+    ctx.fillStyle = '#000'; ctx.font = `bold ${bigS}px ${NUM_FONT}`;
+    ctx.fillText(backTxt, w / 2, y + labS * 1.4 + bigS * 0.85);
+    y += backH + (msg ? pad * 0.6 : 0);
+  }
+  ctx.fillStyle = '#000'; ctx.font = `${msgS}px ${UI_FONT}`;
+  msgLines.forEach((l, i) => ctx.fillText(l, w / 2, y + msgS * (1 + i * 1.3)));
+  ctx.textAlign = 'left';
+}
+
+const APPS = { away: drawAway, dashboard: drawDashboard, note: drawNote, quote: drawQuote, todo: drawTodo, draw: drawDraw, image: drawImage, gallery: drawGallery };
 function render() {
   // Grey cut-off: white-on-black layouts lean towards white so thin white strokes survive
   // Text apps: ~50% edges keep Verdana's shapes clean (same cut-off as the original site).

@@ -8,6 +8,7 @@ A small web app for e-ink screens running the [EPD-nRF5](https://github.com/tsl0
 
 - **Dashboard**: date, month calendar, weather and air quality for your city
 - **Note**: big auto-sized text, first line in red
+- **Away**: out-of-office card with status, "back at" time or date, message and contact line
 - **Quote**: 50 funny, 50 inspiring and 50 scientists' quotes, shuffled with no repeats, with Previous / Next
 - **To-do**: checklist with red priorities and a progress bar (dark or light)
 - **Draw**: brush, fill, undo
