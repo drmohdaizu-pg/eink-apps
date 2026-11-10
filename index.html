@@ -38,6 +38,9 @@
   #todoList button { padding:4px 9px; background:#fff; color:var(--ink); border-color:var(--line); }
   #todoList button.pri { font-weight:800; }
   #todoList button.pri.on { background:#c0392b; color:#fff; border-color:#c0392b; }
+  #galGrid { display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; margin-top:10px; }
+  #galGrid img { width:100%; aspect-ratio:4/3; object-fit:cover; border:2px solid var(--line); border-radius:6px; cursor:pointer; background:#fff; }
+  #galGrid img.on { border-color:var(--ink); }
   .tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:14px; }
   .tabs button { background:transparent; color:var(--ink); border-color:var(--line); }
   .tabs button.on { background:var(--ink); color:#fff; border-color:var(--ink); }
@@ -75,6 +78,7 @@
       <button data-app="todo">To-do</button>
       <button data-app="draw">Draw</button>
       <button data-app="image">Image</button>
+      <button data-app="gallery">Gallery</button>
     </div>
 
     <div class="opts on" data-app="dashboard">
@@ -109,7 +113,7 @@ Knock loudly!</textarea>
 
     <div class="opts" data-app="quote">
       <label>Mood</label>
-      <select id="quoteMood"><option value="funny" selected>Funny</option><option value="inspiring">Inspiring</option></select>
+      <select id="quoteMood"><option value="funny" selected>Funny</option><option value="inspiring">Inspiring</option><option value="science">Scientists</option></select>
       <p><button class="ghost" id="quoteBtn">Another quote</button></p>
       <p class="hint">Picks a random quote from a built-in list.</p>
     </div>
@@ -130,6 +134,18 @@ Knock loudly!</textarea>
       <div class="row" id="sizePresets"></div>
       <input type="range" id="penSize" min="6" max="60" value="6" style="width:100%;margin-top:8px">
       <p class="hint">Draw directly on the preview with your mouse or finger. Fill paints a closed area in one click. Pick white to erase.</p>
+    </div>
+
+    <div class="opts" data-app="gallery">
+      <div class="row">
+        <button class="ghost" id="galRefresh">↻ Refresh</button>
+        <span class="hint" id="galStatus"></span>
+      </div>
+      <div id="galGrid"></div>
+      <div class="row" style="margin-top:8px"><button class="ghost" id="galEdit" disabled>Edit in Image app</button></div>
+      <p class="hint">Pick a picture, then <b>Send to screen</b>. Ready-made images go out pixel-for-pixel; ordinary photos are auto-optimised.</p>
+      <p class="hint">Add pictures on GitHub: open the <b>gallery</b> folder → <b>Add file → Upload files</b> → <b>Commit</b>. They show up here within a minute. <b>The gallery is public.</b></p>
+      <p class="hint"><a id="galLink" target="_blank" rel="noopener">Open the gallery folder on GitHub ↗</a></p>
     </div>
 
     <div class="opts" data-app="image">
@@ -196,6 +212,7 @@ Knock loudly!</textarea>
       <div class="row" style="margin-top:8px">
         <label style="margin:0"><input type="checkbox" id="imgOrig"> Show original</label>
         <button class="ghost" id="imgReset">Reset</button>
+        <button class="ghost" id="imgSave" title="Download exactly what the screen will show, to add to the gallery">⬇ Save optimised PNG</button>
       </div>
     </div>
 
@@ -425,7 +442,7 @@ async function send() {
   const t0 = performance.now();
   $('sendBtn').disabled = true;
   try {
-    if (app === 'image' && $('imgOrig').checked) { $('imgOrig').checked = false; render(); }  // never send the un-dithered original
+    if ((app === 'image' || app === 'gallery') && $('imgOrig').checked) { $('imgOrig').checked = false; render(); }  // never send the un-dithered original
     quantize(false); // make sure preview == what goes to the screen
     const { bw, red } = encode(), drv = $('driverSel').value;
     await write(Cmd.INIT);
@@ -666,7 +683,26 @@ const INSPIRING = [
   ['He who has a why to live can bear almost any how.', 'Friedrich Nietzsche'],
   ['Wherever you go, go with all your heart.', 'Confucius'],
 ];
-const QUOTES = () => $('quoteMood').value === 'funny' ? FUNNY : INSPIRING;
+const SCIENCE = [
+  ['Nothing in life is to be feared, it is only to be understood.', 'Marie Curie'],
+  ['The important thing is not to stop questioning.', 'Albert Einstein'],
+  ['If I have seen further it is by standing on the shoulders of giants.', 'Isaac Newton'],
+  ['The first principle is that you must not fool yourself, and you are the easiest person to fool.', 'Richard Feynman'],
+  ['What I cannot create, I do not understand.', 'Richard Feynman'],
+  ['In the fields of observation, chance favours only the prepared mind.', 'Louis Pasteur'],
+  ['Science knows no country, because knowledge belongs to humanity.', 'Louis Pasteur'],
+  ['Science is a way of thinking much more than it is a body of knowledge.', 'Carl Sagan'],
+  ['Extraordinary claims require extraordinary evidence.', 'Carl Sagan'],
+  ['Nothing in biology makes sense except in the light of evolution.', 'Theodosius Dobzhansky'],
+  ['Research is to see what everybody else has seen, and to think what nobody else has thought.', 'Albert Szent-Györgyi'],
+  ['Equipped with his five senses, man explores the universe around him and calls the adventure Science.', 'Edwin Hubble'],
+  ['The good physician treats the disease; the great physician treats the patient who has the disease.', 'William Osler'],
+  ['Medicine is a science of uncertainty and an art of probability.', 'William Osler'],
+  ["The good thing about science is that it's true whether or not you believe in it.", 'Neil deGrasse Tyson'],
+  ['I was taught that the way of progress was neither swift nor easy.', 'Marie Curie'],
+];
+const QUOTE_SETS = { funny: FUNNY, inspiring: INSPIRING, science: SCIENCE };
+const QUOTES = () => QUOTE_SETS[$('quoteMood').value] || FUNNY;
 let quoteIdx = Math.floor(Math.random() * FUNNY.length);
 function drawQuote() {
   const list = QUOTES(), [q, a] = list[quoteIdx % list.length], pad = W() * 0.1;
@@ -1039,12 +1075,12 @@ $('imgAuto').onclick = autoOptimize;
 function drawImage() {
   if (!picture) {
     ctx.fillStyle = '#000'; ctx.font = `${H() * 0.06}px ${UI_FONT}`; ctx.textAlign = 'center';
-    ctx.fillText('Choose, drop or paste a picture', W() / 2, H() / 2); ctx.textAlign = 'left';
+    ctx.fillText(app === 'gallery' ? 'Pick a picture from the gallery' : 'Choose, drop or paste a picture', W() / 2, H() / 2); ctx.textAlign = 'left';
     drawOverlay(); return;
   }
   paintPicture(ctx);
   if (!$('imgOrig').checked) processPicture(!!imgDrag);   // flat colours while dragging, full dither on release
-  drawOverlay();
+  if (app === 'image') drawOverlay();   // text/drawing belongs to the Image app
 }
 
 // Live value labels for the sliders + coalesced re-rendering
@@ -1210,16 +1246,92 @@ function drawTodo() {
   ctx.fillStyle = red; if (total) ctx.fillRect(bx + 4, byy + 4, Math.max(0, (bw - 8) * done / total), bh - 8);
 }
 
-const APPS = { dashboard: drawDashboard, note: drawNote, quote: drawQuote, todo: drawTodo, draw: drawDraw, image: drawImage };
+// ---------- Gallery: pictures stored in the repository's gallery/ folder ----------
+const GALLERY_REPO = 'drmohdaizu-pg/eink-apps';
+let galItems = null, galSel = null;
+$('galLink').href = `https://github.com/${GALLERY_REPO}/tree/main/gallery`;
+async function loadGallery(force) {
+  $('galStatus').textContent = 'Loading…';
+  try {
+    let items = null;
+    if (!force) try { items = JSON.parse(sessionStorage.getItem('gallery')); } catch (_) {}
+    if (!items) {
+      // GitHub lists the folder for us, so new uploads appear without editing any list
+      const r = await fetch(`https://api.github.com/repos/${GALLERY_REPO}/contents/gallery`, { cache: 'no-store' });
+      if (r.status === 404) items = [];
+      else if (!r.ok) throw new Error('GitHub replied ' + r.status + (r.status === 403 ? ' (too many requests, try later)' : ''));
+      else items = (await r.json())
+        .filter(f => f.type === 'file' && /\.(png|jpe?g|gif|webp|bmp)$/i.test(f.name))
+        .map(f => ({ name: f.name, url: location.hostname.endsWith('github.io') ? 'gallery/' + encodeURIComponent(f.name) : f.download_url }));
+      try { sessionStorage.setItem('gallery', JSON.stringify(items)); } catch (_) {}
+    }
+    galItems = items; renderGalleryGrid();
+    $('galStatus').textContent = items.length ? `${items.length} picture${items.length > 1 ? 's' : ''}` : 'No pictures yet';
+  } catch (e) { $('galStatus').textContent = 'Could not load: ' + e.message; }
+}
+function renderGalleryGrid() {
+  const g = $('galGrid'); g.innerHTML = '';
+  (galItems || []).forEach(it => {
+    const im = document.createElement('img');
+    im.src = it.url; im.loading = 'lazy';
+    im.alt = im.title = it.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ');
+    if (galSel === it.name) im.className = 'on';
+    im.onclick = () => pickGallery(it);
+    g.appendChild(im);
+  });
+}
+// A "ready" picture is already the screen's size and uses only the screen's colours
+function isScreenReady(img) {
+  if (img.naturalWidth !== W() || img.naturalHeight !== H()) return false;
+  const t = document.createElement('canvas'); t.width = W(); t.height = H();
+  const c = t.getContext('2d', { willReadFrequently: true }); c.drawImage(img, 0, 0);
+  const d = c.getImageData(0, 0, W(), H()).data, pal = palette().flatMap(n => [COLORS[n], REF[n]]);
+  for (let i = 0; i < d.length; i += 4 * 7) {
+    if (!pal.some(p => Math.abs(p[0] - d[i]) < 14 && Math.abs(p[1] - d[i+1]) < 14 && Math.abs(p[2] - d[i+2]) < 14)) return false;
+  }
+  return true;
+}
+function pickGallery(it) {
+  galSel = it.name; renderGalleryGrid();
+  const img = new Image(); img.crossOrigin = 'anonymous';
+  img.onload = () => {
+    picture = img; imgRot = 0; imgPanX = imgPanY = 0; $('imgZoom').value = 1;
+    $('imgAuto').disabled = false; $('imgOrig').checked = false; $('galEdit').disabled = false;
+    if (isScreenReady(img)) {
+      $('imgAlg').value = 'none'; $('imgContrast').value = 1; $('imgBright').value = 0; $('imgSat').value = 1;
+      $('imgAutoNote').textContent = 'Ready-made for this screen: sent exactly as is.';
+      render();
+    } else autoOptimize();
+    log('Gallery: ' + it.name);
+  };
+  img.onerror = () => log('Could not load ' + it.name);
+  img.src = it.url;
+}
+$('galRefresh').onclick = () => loadGallery(true);
+$('galEdit').onclick = () => document.querySelector('#tabs [data-app=image]').click();
+
+// Download exactly what the screen will show (without the battery icon)
+$('imgSave').onclick = () => {
+  const was = $('battShow').checked; $('battShow').checked = false; $('imgOrig').checked = false; render();
+  canvas.toBlob(b => {
+    const a = document.createElement('a'); a.href = URL.createObjectURL(b);
+    a.download = `eink-${W()}x${H()}-${new Date().toISOString().slice(0, 10)}.png`; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    $('battShow').checked = was; render();
+  }, 'image/png');
+};
+
+const APPS = { dashboard: drawDashboard, note: drawNote, quote: drawQuote, todo: drawTodo, draw: drawDraw, image: drawImage, gallery: drawImage };
 function render() {
   // Grey cut-off: white-on-black layouts lean towards white so thin white strokes survive
   // Text apps: ~50% edges keep Verdana's shapes clean (same cut-off as the original site).
   // Quote and Dashboard use the heavier cut-off, which suits their serif.
-  bwThreshold = app === 'image' ? 128 : (app === 'quote' || app === 'dashboard') ? 215 : 140;
-  crispColour = app !== 'image';
+  const photo = app === 'image' || app === 'gallery';
+  bwThreshold = photo ? 128 : (app === 'quote' || app === 'dashboard') ? 215 : 140;
+  crispColour = !photo;
   updateOuts();
   blank(); APPS[app](); drawBattery();
-  if (app !== 'image') quantize(false);
+  if (!photo) quantize(false);
 }
 
 // ---------- Wiring ----------
@@ -1238,6 +1350,7 @@ $('driverSel').onchange = applyDriver;
 $('tabs').onclick = e => {
   const b = e.target.closest('button'); if (!b) return;
   app = b.dataset.app;
+  if (app === 'gallery' && !galItems) loadGallery();
   document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b));
   document.querySelectorAll('.opts').forEach(x => x.classList.toggle('on', x.dataset.app === app));
   canvas.style.cursor = app === 'draw' ? 'crosshair' : app === 'image' ? 'grab' : 'default';
