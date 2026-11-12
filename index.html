@@ -38,6 +38,12 @@
   #todoList button { padding:4px 9px; background:#fff; color:var(--ink); border-color:var(--line); }
   #todoList button.pri { font-weight:800; }
   #todoList button.pri.on { background:#c0392b; color:#fff; border-color:#c0392b; }
+  #mineList { list-style:none; padding:0; margin:10px 0 0; max-height:260px; overflow:auto; }
+  #mineList li { display:flex; gap:6px; align-items:center; margin:4px 0; }
+  #mineList input.t { flex:1; padding:5px 7px; }
+  #mineList button { padding:4px 9px; background:#fff; color:var(--ink); border-color:var(--line); }
+  #mineList li.on input.t { border-color:var(--ink); }
+  #mineList li.on button.show { background:var(--ink); color:#fff; border-color:var(--ink); }
   #galGrid { display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; margin-top:10px; }
   #galGrid img { width:100%; aspect-ratio:4/3; object-fit:cover; border:2px solid var(--line); border-radius:6px; cursor:pointer; background:#fff; }
   #galGrid img.on { border-color:var(--ink); }
@@ -58,6 +64,7 @@
 <body>
 <header>
   <h1>E-ink App Hub</h1>
+  <button id="updateBtn" style="display:none;background:#c0392b;border-color:#c0392b" title="A newer version of this page is on GitHub">New version: click to update</button>
   <span id="connPill" class="pill off" title="Bluetooth connection to the e-ink screen"><i></i><span id="connText">Not connected</span></span>
   <button id="connectBtn">Connect screen</button>
   <select id="driverSel" title="Screen driver (auto-detected on connect)"></select>
@@ -162,13 +169,10 @@ Knock loudly!</textarea>
       <label>Mood</label>
       <select id="quoteMood"><option value="funny" selected>Funny</option><option value="inspiring">Inspiring</option><option value="science">Scientists</option><option value="mine">My quotes</option></select>
       <div id="mineBox" style="display:none">
-        <label>Quote</label>
-        <textarea id="mineText" style="min-height:70px" placeholder="Type or paste a quote"></textarea>
-        <label>Author (optional)</label>
-        <div class="row"><input type="text" id="mineAuthor" placeholder="e.g. Ibn Sina" style="flex:1"><button id="mineAdd">Add</button></div>
-        <p class="hint" id="mineCount" style="margin-bottom:0"></p>
-        <ul id="mineList" style="list-style:none;padding:0;margin:4px 0 0;max-height:220px;overflow:auto"></ul>
-        <p class="hint">Click a quote to show it. Saved only in this browser, so they won't appear on another computer.</p>
+        <label>Add quote</label>
+        <div class="row"><input type="text" id="mineNew" placeholder="Type a quote and press Enter" style="flex:1"><button class="ghost" id="mineAdd">Add</button></div>
+        <ul id="mineList"></ul>
+        <p class="hint">▶ shows a quote · click its text to edit · ✕ deletes. Put the author after a dash, e.g. <i>Knowledge is power — Francis Bacon</i></p>
       </div>
       <div class="row" style="margin-top:10px">
         <button class="ghost" id="quotePrev" title="Previous quote">◀ Previous</button>
@@ -963,6 +967,8 @@ function updateQuoteNav() {
   $('quotePrev').disabled = d.pos === 0;
   const empty = !(QUOTE_SETS[$('quoteMood').value] || FUNNY).length;
   $('quoteNext').disabled = empty;
+  const cur = shownMine();
+  $('mineList').querySelectorAll('li').forEach((x, k) => x.classList.toggle('on', k === cur));
   $('quoteCount').textContent = empty ? '' : `${(d.pos % n) + 1} / ${n}`;
 }
 function drawQuote() {
@@ -995,32 +1001,41 @@ function showMine(i) {   // jump straight to one of your quotes
   quoteDeck.mine = { order: [i, ...rest], pos: 0, history: [i] };
   updateQuoteNav(); render();
 }
+// "Knowledge is power — Francis Bacon" → [quote, author]. The author is whatever follows the last spaced dash.
+function splitQuote(s) {
+  const m = s.trim().match(/^(.*\S)\s+[—–~-]+\s*([^—–~.!?]{1,40})$/);
+  const q = (m ? m[1] : s).trim().replace(/^["“”']+|["“”']+$/g, '').trim();
+  return [q, m ? m[2].trim() : ''];
+}
+const joinQuote = ([q, a]) => q + (a ? ' — ' + a : '');
+function shownMine() { const d = quoteDeck.mine; return d && d.history.length ? d.history[d.pos] : -1; }
+// Works like the to-do list: each quote is an editable row
 function renderMineList() {
   $('mineBox').style.display = $('quoteMood').value === 'mine' ? '' : 'none';
   const ul = $('mineList'); ul.innerHTML = '';
-  MINE.forEach(([q, a], i) => {
+  MINE.forEach((item, i) => {
     const li = document.createElement('li');
-    li.style.cssText = 'display:flex;gap:6px;align-items:flex-start;padding:5px 0;border-bottom:1px solid var(--line);font-size:13px';
-    const t = document.createElement('span'); t.style.cssText = 'flex:1;cursor:pointer';
-    t.title = 'Show on screen'; t.textContent = `“${q}”` + (a ? ` — ${a}` : '');
-    t.onclick = () => showMine(i);
-    const del = document.createElement('button'); del.className = 'ghost'; del.textContent = '✕'; del.title = 'Delete';
-    del.style.cssText = 'padding:2px 8px';
-    del.onclick = () => {
-      if (!confirm('Delete this quote?')) return;
-      MINE.splice(i, 1); saveMine(); delete quoteDeck.mine; renderMineList(); updateQuoteNav(); render();
-    };
-    li.append(t, del); ul.appendChild(li);
+    if (i === shownMine()) li.className = 'on';
+    li.innerHTML = `<button type="button" class="show" title="Show on screen">▶</button>
+      <input type="text" class="t"><button type="button" class="del" title="Delete">✕</button>`;
+    const [show, txt, del] = li.querySelectorAll('input, button');
+    txt.value = joinQuote(item);
+    show.onclick = () => { showMine(i); renderMineList(); };
+    txt.onfocus = () => { if (shownMine() !== i) { showMine(i); ul.querySelectorAll('li').forEach((x, k) => x.classList.toggle('on', k === i)); } };
+    txt.oninput = () => { MINE[i] = splitQuote(txt.value); saveMine(); render(); };
+    txt.onchange = () => { if (!MINE[i][0]) del.onclick(); };   // emptied → removed
+    del.onclick = () => { MINE.splice(i, 1); saveMine(); delete quoteDeck.mine; renderMineList(); updateQuoteNav(); render(); };
+    ul.appendChild(li);
   });
-  $('mineCount').textContent = MINE.length ? `${MINE.length} quote${MINE.length > 1 ? 's' : ''} saved in this browser` : 'No quotes yet';
 }
 function addMine() {
-  const q = $('mineText').value.trim().replace(/^["“”']+|["“”']+$/g, ''), a = $('mineAuthor').value.trim();
-  if (!q) { $('mineText').focus(); return; }
-  if (MINE.some(([x]) => x.toLowerCase() === q.toLowerCase())) { alert('That quote is already in your list.'); return; }
-  MINE.push([q, a]); saveMine();
-  $('mineText').value = ''; $('mineAuthor').value = '';
-  renderMineList(); showMine(MINE.length - 1);   // show the new quote straight away
+  const item = splitQuote($('mineNew').value);
+  if (!item[0]) { $('mineNew').focus(); return; }
+  $('mineNew').value = '';
+  const dup = MINE.findIndex(([x]) => x.toLowerCase() === item[0].toLowerCase());
+  if (dup >= 0) { showMine(dup); renderMineList(); return; }   // already there: just show it
+  MINE.push(item); saveMine();
+  showMine(MINE.length - 1); renderMineList();   // show the new quote straight away
 }
 
 // Draw (persistent layer)
@@ -1795,6 +1810,17 @@ $('sendBtn').onclick = send;
 $('clearBtn').onclick = clearScreen;
 $('battBtn').onclick = checkBattery;
 $('cityBtn').onclick = loadWeather;
+// Browsers keep a copy of this page for ~10 minutes; check GitHub for a newer one and offer to update
+const APP_VERSION = '2026-11-12b';
+async function checkForUpdate() {
+  try {
+    const t = await (await fetch(location.pathname + '?check=' + Date.now(), { cache: 'no-store' })).text();
+    const v = (t.match(/APP_VERSION = '([^']+)'/) || [])[1];
+    if (v && v !== APP_VERSION) $('updateBtn').style.display = '';
+  } catch (_) {}
+}
+$('updateBtn').onclick = () => { location.href = location.pathname + '?v=' + Date.now(); };
+checkForUpdate(); setInterval(checkForUpdate, 30 * 60000);
 $('clockBtn').onclick = builtinClock;
 try { const c = localStorage.getItem('dashClock'); if (c) $('dashClock').value = c; } catch (_) {}
 $('dashClock').onchange = () => {
@@ -1806,7 +1832,7 @@ $('quoteNext').onclick = nextQuote;
 $('quotePrev').onclick = prevQuote;
 $('quoteMood').onchange = () => { renderMineList(); updateQuoteNav(); render(); };   // each mood remembers its own place
 $('mineAdd').onclick = addMine;
-$('mineAuthor').addEventListener('keydown', e => { if (e.key === 'Enter') addMine(); });
+$('mineNew').addEventListener('keydown', e => { if (e.key === 'Enter') addMine(); });
 renderMineList();
 updateQuoteNav();
 $('drawClear').onclick = () => { saveUndo(); drawLayer = null; render(); };
