@@ -5,89 +5,196 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>E-ink App Hub</title>
 <style>
-  :root { --bg:#f4f1ea; --card:#fff; --ink:#1b1b1b; --muted:#6b6b6b; --line:#ddd6c8; --accent:#c0392b; }
+  :root { --bg:#f4f1ea; --card:#fff; --ink:#1b1b1b; --muted:#6b6b6b; --line:#e2dccf; --soft:#faf8f3; --accent:#c0392b; --r:10px; }
   * { box-sizing: border-box; }
   @font-face { font-family:'Literata'; font-style:normal; font-weight:400 700; src:url(fonts/Literata-latin.woff2) format('woff2'); }
   @font-face { font-family:'Literata'; font-style:italic; font-weight:400 700; src:url(fonts/Literata-Italic-latin.woff2) format('woff2'); }
-  body { margin:0; font-family: system-ui, -apple-system, Segoe UI, sans-serif; background:var(--bg); color:var(--ink); }
-  header { display:flex; align-items:center; gap:12px; padding:14px 20px; border-bottom:1px solid var(--line); background:var(--card); flex-wrap:wrap; }
-  header h1 { font-size:18px; margin:0 12px 0 0; }
-  button, select, input, textarea { font:inherit; }
-  button { padding:8px 14px; border-radius:8px; border:1px solid var(--ink); background:var(--ink); color:#fff; cursor:pointer; }
-  button.ghost { background:transparent; color:var(--ink); }
+  html { -webkit-text-size-adjust:100%; }
+  body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size:15px; background:var(--bg); color:var(--ink); overflow-x:hidden; }
+  button, select, input, textarea { font:inherit; color:inherit; }
+  a { color:var(--accent); }
+
+  /* ---- Buttons ---- */
+  button, .btn { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:38px; padding:7px 14px; border-radius:8px;
+    border:1px solid var(--ink); background:var(--ink); color:#fff; cursor:pointer; font-weight:500; line-height:1.2; transition:background .15s, border-color .15s, box-shadow .15s; user-select:none; }
+  button:hover:not(:disabled), .btn:hover { box-shadow:0 1px 0 rgba(0,0,0,.08), 0 0 0 3px rgba(27,27,27,.06); }
+  button.ghost, .btn.ghost { background:var(--card); color:var(--ink); border-color:var(--line); }
+  label.btn { font-size:inherit; font-weight:500; margin:0; }
+  button.ghost:hover:not(:disabled), .btn.ghost:hover { border-color:#bdb5a5; }
+  button.primary { background:var(--accent); border-color:var(--accent); font-weight:700; padding:9px 22px; min-height:42px; }
   button:disabled { opacity:.4; cursor:not-allowed; }
-  header select { width:auto; }
-  #status { font-size:13px; color:var(--muted); }
-  .pill { display:inline-flex; align-items:center; gap:7px; padding:5px 12px; border-radius:999px; font-size:13px; font-weight:600; border:1px solid; }
-  .pill i { width:9px; height:9px; border-radius:50%; background:currentColor; }
+  :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+
+  /* ---- Header ---- */
+  header { position:sticky; top:0; z-index:30; display:flex; align-items:center; gap:10px; padding:10px 20px; background:rgba(255,255,255,.92);
+    backdrop-filter:saturate(1.4) blur(8px); border-bottom:1px solid var(--line); }
+  header h1 { font-size:17px; margin:0; white-space:nowrap; font-family:Literata, Georgia, serif; }
+  header h1 b { color:var(--accent); }
+  .hgroup { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .spacer { flex:1; }
+  .pill { display:inline-flex; align-items:center; gap:7px; padding:5px 12px; border-radius:999px; font-size:13px; font-weight:600; border:1px solid; white-space:nowrap; }
+  .pill i { width:9px; height:9px; border-radius:50%; background:currentColor; flex:none; }
   .pill.off { color:#b42318; background:#fef3f2; border-color:#fecdca; }
   .pill.wait { color:#b54708; background:#fffaeb; border-color:#fedf89; }
   .pill.wait i { animation: blink 1s infinite; }
   .pill.on { color:#067647; background:#ecfdf3; border-color:#abefc6; }
   @keyframes blink { 50% { opacity:.2; } }
-  main { display:grid; grid-template-columns: 300px 1fr; gap:20px; padding:20px; }
-  @media (max-width: 800px) { main { grid-template-columns: 1fr; } }
-  .panel { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
-  #sizePresets button { width:40px; height:40px; padding:0; display:flex; align-items:center; justify-content:center; background:#fff; border-color:var(--line); }
+
+  /* Screen menu (battery, built-in clock, screen type, clear) */
+  details.menu { position:relative; }
+  details.menu > summary { list-style:none; }
+  details.menu > summary::-webkit-details-marker { display:none; }
+  details.menu > summary::after { content:'▾'; font-size:11px; margin-left:2px; }
+  .menu-body { position:absolute; right:0; top:calc(100% + 6px); width:280px; background:var(--card); border:1px solid var(--line); border-radius:12px;
+    box-shadow:0 12px 32px rgba(0,0,0,.14); padding:14px; display:flex; flex-direction:column; gap:8px; z-index:40; }
+  .menu-body button { width:100%; justify-content:flex-start; }
+  .menu-body .menu-label { font-size:12px; color:var(--muted); margin:2px 0 -2px; }
+  .menu-body hr { border:0; border-top:1px solid var(--line); margin:4px 0; width:100%; }
+
+  /* ---- Layout ---- */
+  main { display:grid; grid-template-columns: 360px minmax(0, 1fr); gap:24px; padding:22px; max-width:1400px; margin:0 auto; align-items:start; }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; box-shadow:0 1px 2px rgba(0,0,0,.03); min-width:0; }
+  .preview-wrap { position:sticky; top:84px; display:flex; flex-direction:column; align-items:center; gap:10px; min-width:0; }
+  canvas#screen { width:100%; max-width:820px; height:auto; border:12px solid #262626; border-radius:10px; background:#fff; image-rendering:pixelated;
+    box-shadow:0 14px 36px rgba(0,0,0,.18), 0 2px 6px rgba(0,0,0,.12); }
+  canvas#screen.touch { touch-action:none; }
+  .preview-meta { display:flex; gap:12px; align-items:center; justify-content:center; flex-wrap:wrap; min-height:20px; }
+  #status { font-size:13px; color:var(--ink); font-weight:500; }
+  #status:empty { display:none; }
+
+  /* App tabs: icon grid */
+  .apps { display:grid; grid-template-columns:repeat(4, 1fr); gap:6px; margin-bottom:16px; }
+  .apps button { flex-direction:column; gap:2px; min-height:58px; padding:6px 2px; background:var(--soft); color:var(--ink); border-color:var(--line); font-size:12px; font-weight:600; }
+  .apps button span { font-size:19px; line-height:1; }
+  .apps button.on { background:var(--ink); color:#fff; border-color:var(--ink); }
+
+  /* Small segmented choices (Draw tools, Image tools) */
+  .tabs { display:flex; flex-wrap:wrap; gap:6px; }
+  .tabs button { background:var(--card); color:var(--ink); border-color:var(--line); }
+  .tabs button.on { background:var(--ink); color:#fff; border-color:var(--ink); }
+
+  /* ---- Form controls ---- */
+  label { display:block; font-size:13px; color:var(--muted); margin:12px 0 5px; font-weight:500; }
+  input[type=text], input[type=number], input[type=datetime-local], textarea, select { width:100%; min-height:38px; padding:7px 10px; border:1px solid var(--line);
+    border-radius:8px; background:#fff; transition:border-color .15s; }
+  input[type=text]:focus, input[type=number]:focus, input[type=datetime-local]:focus, textarea:focus, select:focus { border-color:#9c9384; outline:none; }
+  textarea { min-height:110px; resize:vertical; line-height:1.4; }
+  input[type=range] { width:100%; accent-color:var(--ink); }
+  input[type=checkbox] { accent-color:var(--accent); width:16px; height:16px; margin:0; flex:none; }
+  label.check, label:has(> input[type=checkbox]) { display:flex; align-items:center; gap:8px; color:var(--ink); cursor:pointer; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .row > label { margin:0; }
+  .opts { display:none; } .opts.on { display:block; }
+  .opts > label:first-child, .opts > .sec:first-child { margin-top:0; }
+  .hint { font-size:12.5px; color:var(--muted); line-height:1.45; }
+  .note { font-size:12.5px; line-height:1.45; padding:8px 10px; border-radius:8px; background:var(--soft); border:1px solid var(--line); margin:0 0 12px; }
+  .wide { width:100%; }
+
+  /* Collapsible sections (Image app, activity log) */
+  details.sec { border-top:1px solid var(--line); padding:4px 0 8px; }
+  details.sec > summary { cursor:pointer; list-style:none; display:flex; align-items:center; justify-content:space-between; padding:10px 0 6px;
+    font-size:13px; font-weight:700; letter-spacing:.02em; text-transform:uppercase; color:var(--ink); }
+  details.sec > summary::-webkit-details-marker { display:none; }
+  details.sec > summary::after { content:'+'; font-size:18px; font-weight:400; color:var(--muted); }
+  details.sec[open] > summary::after { content:'–'; }
+  details.sec > summary + * { margin-top:2px; }
+
+  /* Lists */
+  #todoList, #mineList { list-style:none; padding:0; margin:10px 0 0; }
+  #mineList { max-height:260px; overflow:auto; }
+  #todoList li, #mineList li { display:flex; gap:6px; align-items:center; margin:5px 0; }
+  #todoList input.t, #mineList input.t { flex:1; min-width:0; padding:5px 8px; }
+  #todoList button, #mineList button { min-height:34px; padding:4px 10px; background:#fff; color:var(--ink); border-color:var(--line); }
+  #todoList button.pri { font-weight:800; }
+  #todoList button.pri.on { background:#c0392b; color:#fff; border-color:#c0392b; }
+  #mineList li.on input.t { border-color:var(--ink); }
+  #mineList li.on button.show { background:var(--ink); color:#fff; border-color:var(--ink); }
+
+  #sizePresets button { width:42px; height:42px; min-height:0; padding:0; background:#fff; border-color:var(--line); }
   #sizePresets button.on { border-color:var(--ink); border-width:2px; }
   #sizePresets span { display:block; border-radius:50%; background:var(--ink); }
   #brushRing { position:fixed; pointer-events:none; border:1px solid #c0392b; border-radius:50%; display:none; transform:translate(-50%,-50%); }
-  #todoList { list-style:none; padding:0; margin:10px 0 0; }
-  #todoList li { display:flex; gap:6px; align-items:center; margin:4px 0; }
-  #todoList input.t { flex:1; padding:5px 7px; }
-  #todoList button { padding:4px 9px; background:#fff; color:var(--ink); border-color:var(--line); }
-  #todoList button.pri { font-weight:800; }
-  #todoList button.pri.on { background:#c0392b; color:#fff; border-color:#c0392b; }
-  #mineList { list-style:none; padding:0; margin:10px 0 0; max-height:260px; overflow:auto; }
-  #mineList li { display:flex; gap:6px; align-items:center; margin:4px 0; }
-  #mineList input.t { flex:1; padding:5px 7px; }
-  #mineList button { padding:4px 9px; background:#fff; color:var(--ink); border-color:var(--line); }
-  #mineList li.on input.t { border-color:var(--ink); }
-  #mineList li.on button.show { background:var(--ink); color:#fff; border-color:var(--ink); }
   #galGrid { display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; margin-top:10px; }
-  #galGrid img { width:100%; aspect-ratio:4/3; object-fit:cover; border:2px solid var(--line); border-radius:6px; cursor:pointer; background:#fff; }
+  #galGrid img { width:100%; aspect-ratio:4/3; object-fit:cover; border:2px solid var(--line); border-radius:8px; cursor:pointer; background:#fff; }
   #galGrid img.on { border-color:var(--ink); }
-  .tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:14px; }
-  .tabs button { background:transparent; color:var(--ink); border-color:var(--line); }
-  .tabs button.on { background:var(--ink); color:#fff; border-color:var(--ink); }
-  label { display:block; font-size:13px; color:var(--muted); margin:10px 0 4px; }
-  input[type=text], textarea, select { width:100%; padding:7px 9px; border:1px solid var(--line); border-radius:6px; background:#fff; }
-  textarea { min-height:110px; resize:vertical; }
-  .opts { display:none; } .opts.on { display:block; }
-  .preview-wrap { display:flex; flex-direction:column; align-items:center; gap:12px; }
-  canvas#screen { max-width:100%; height:auto; border:10px solid #2b2b2b; border-radius:6px; background:#fff; image-rendering: pixelated; box-shadow: 0 6px 20px rgba(0,0,0,.15); }
-  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-  #log { font: 12px/1.4 ui-monospace, Consolas, monospace; color:var(--muted); max-height:140px; overflow:auto; white-space:pre-wrap; margin-top:12px; }
-  .hint { font-size:12px; color:var(--muted); }
+  #log { font: 12px/1.45 ui-monospace, Consolas, monospace; color:var(--muted); max-height:160px; overflow:auto; white-space:pre-wrap; }
+
+  /* Camera */
+  #camBar { display:none; margin-top:10px; padding:10px; border-radius:10px; background:var(--soft); border:1px solid var(--line); }
+  #camBar.on { display:flex; }
+  #camSnap { background:var(--accent); border-color:var(--accent); font-weight:700; min-width:96px; }
+  .live-badge { display:none; font-size:12px; font-weight:700; color:var(--accent); }
+  .live-badge.on { display:inline-flex; align-items:center; gap:6px; }
+  .live-badge i { width:8px; height:8px; border-radius:50%; background:var(--accent); animation:blink 1s infinite; }
+
+  /* Bottom action bar (phones / tablets) */
+  #dock { display:none; }
+
+  @media (max-width: 860px) {
+    header { padding:8px 12px; gap:8px; flex-wrap:nowrap; }
+    header h1 { font-size:15px; }
+    header .hgroup { flex-wrap:nowrap; gap:6px; }
+    header .pill { font-size:12px; padding:4px 10px; max-width:150px; overflow:hidden; text-overflow:ellipsis; }
+    header #sendBtn { display:none; }
+    body:not(.connected) header #connectBtn { display:none; }   /* the bottom bar connects */
+    header #connectBtn, header summary.btn { min-height:38px; padding:6px 10px; }
+    main { grid-template-columns:1fr; padding:12px; gap:14px; }
+    .preview-wrap { position:static; order:-1; }
+    canvas#screen { border-width:8px; }
+    .panel { padding:14px; }
+    body { padding-bottom:84px; }
+    button, .btn { min-height:44px; }
+    .apps button { min-height:56px; }
+    input[type=text], input[type=number], input[type=datetime-local], textarea, select { min-height:44px; font-size:16px; }
+    .menu-body { position:fixed; left:12px; right:12px; top:auto; width:auto; }
+    #dock { display:flex; position:fixed; left:0; right:0; bottom:0; z-index:35; gap:10px; align-items:center; padding:10px 12px calc(10px + env(safe-area-inset-bottom));
+      background:rgba(255,255,255,.96); backdrop-filter:blur(8px); border-top:1px solid var(--line); box-shadow:0 -6px 20px rgba(0,0,0,.06); }
+    #dock .dot { width:12px; height:12px; border-radius:50%; flex:none; background:#d92d20; }
+    #dock .dot.on { background:#12b76a; } #dock .dot.wait { background:#f79009; animation:blink 1s infinite; }
+    #dockBtn { flex:1; min-height:50px; font-size:16px; }
+  }
 </style>
 </head>
 <body>
 <header>
-  <h1>E-ink App Hub</h1>
-  <button id="updateBtn" style="display:none;background:#c0392b;border-color:#c0392b" title="A newer version of this page is on GitHub">New version: click to update</button>
-  <span id="connPill" class="pill off" title="Bluetooth connection to the e-ink screen"><i></i><span id="connText">Not connected</span></span>
-  <button id="connectBtn">Connect screen</button>
-  <select id="driverSel" title="Screen driver (auto-detected on connect)"></select>
-  <button id="sendBtn" disabled>Send to screen</button>
-  <button id="battBtn" class="ghost" disabled title="Shows the screen's built-in calendar, which includes a battery icon and voltage">Check battery</button>
-  <button id="clockBtn" class="ghost" disabled title="Switches the screen to its own clock, which keeps running on battery without the laptop">Built-in clock</button>
-  <label style="margin:0;display:flex;align-items:center;gap:6px;color:var(--ink)"><input type="checkbox" id="battShow" checked> Battery
-    <input type="number" id="battV" step="0.1" min="2" max="3.6" placeholder="e.g. 3.0" title="Voltage shown by Check battery" style="width:80px;padding:6px;border:1px solid var(--line);border-radius:6px">V <b id="battPct"></b></label>
-  <button id="clearBtn" class="ghost" disabled>Clear screen</button>
-  <span id="status"></span>
+  <h1>E-ink <b>App Hub</b></h1>
+  <button id="updateBtn" class="primary" style="display:none;min-height:34px;padding:5px 12px" title="A newer version of this page is on GitHub">New version: update</button>
+  <div class="spacer"></div>
+  <div class="hgroup">
+    <span id="connPill" class="pill off" title="Bluetooth connection to the e-ink screen"><i></i><span id="connText">Not connected</span></span>
+    <button id="connectBtn" class="ghost">Connect screen</button>
+    <details class="menu" id="screenMenu">
+      <summary class="btn ghost" title="Battery, built-in clock, screen type, clear">Screen</summary>
+      <div class="menu-body">
+        <div class="menu-label">Battery icon on every app</div>
+        <div class="row" style="flex-wrap:nowrap">
+          <label class="check" style="margin:0"><input type="checkbox" id="battShow" checked> Show</label>
+          <input type="number" id="battV" step="0.1" min="2" max="3.6" placeholder="e.g. 3.0" title="Voltage shown by Check battery" style="width:96px">
+          <span>V</span> <b id="battPct"></b>
+        </div>
+        <button id="battBtn" class="ghost" disabled title="Shows the screen's built-in calendar, which includes a battery icon and voltage">🔋 Check battery</button>
+        <button id="clockBtn" class="ghost" disabled title="Switches the screen to its own clock, which keeps running on battery without the laptop">🕒 Built-in clock</button>
+        <button id="clearBtn" class="ghost" disabled>⬜ Clear screen</button>
+        <hr>
+        <div class="menu-label">Screen type (detected when you connect)</div>
+        <select id="driverSel" title="Screen driver (auto-detected on connect)"></select>
+      </div>
+    </details>
+  </div>
+  <button id="sendBtn" class="primary" disabled>Send to screen ➜</button>
 </header>
 
 <main>
   <section class="panel">
-    <div class="tabs" id="tabs">
-      <button data-app="dashboard" class="on">Dashboard</button>
-      <button data-app="note">Note</button>
-      <button data-app="away">Away</button>
-      <button data-app="quote">Quote</button>
-      <button data-app="todo">To-do</button>
-      <button data-app="draw">Draw</button>
-      <button data-app="image">Image</button>
-      <button data-app="gallery">Gallery</button>
+    <div class="apps" id="tabs">
+      <button data-app="dashboard" class="on"><span>🗓</span>Dashboard</button>
+      <button data-app="note"><span>📝</span>Note</button>
+      <button data-app="away"><span>🚪</span>Away</button>
+      <button data-app="quote"><span>❝</span>Quote</button>
+      <button data-app="todo"><span>☑</span>To-do</button>
+      <button data-app="draw"><span>✎</span>Draw</button>
+      <button data-app="image"><span>📷</span>Image</button>
+      <button data-app="gallery"><span>🖼</span>Gallery</button>
     </div>
 
     <div class="opts on" data-app="dashboard">
@@ -127,7 +234,7 @@
       <label>Note text</label>
       <textarea id="noteText">Back at 3pm
 Knock loudly!</textarea>
-      <label><input type="checkbox" id="noteAccent" checked> Accent colour title (first line)</label>
+      <label class="check"><input type="checkbox" id="noteAccent" checked> Accent colour title (first line)</label>
       <p class="hint">Text is auto-sized to fill the screen.</p>
     </div>
 
@@ -147,7 +254,7 @@ Knock loudly!</textarea>
       <label>Heading (edit freely)</label>
       <input type="text" id="awayHead" value="Out of office">
       <label><input type="checkbox" id="awayBackOn" checked> Show when I'm back</label>
-      <input type="datetime-local" id="awayBack" style="width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px">
+      <input type="datetime-local" id="awayBack">
       <div class="row" style="margin-top:6px">
         <button class="ghost" data-away-add="30">+30 min</button>
         <button class="ghost" data-away-add="60">+1 hr</button>
@@ -184,7 +291,7 @@ Knock loudly!</textarea>
 
     <div class="opts" data-app="draw">
       <label>Tool</label>
-      <div class="tabs" id="toolSel" style="margin-bottom:0">
+      <div class="tabs" id="toolSel">
         <button type="button" data-tool="brush" class="on">✎ Brush</button>
         <button type="button" data-tool="fill">◧ Fill</button>
       </div>
@@ -214,83 +321,114 @@ Knock loudly!</textarea>
     </div>
 
     <div class="opts" data-app="image">
-      <p class="hint" style="margin-top:0">🔒 <b>Private:</b> photos opened here stay on this device and are never uploaded.</p>
-      <label>Picture</label>
-      <input type="file" id="imgFile" accept="image/*">
-      <p class="hint">Or drag a picture onto the preview, or paste one with Ctrl+V.</p>
-      <button id="imgAuto" style="width:100%;margin-top:6px" disabled>✨ Auto-optimize for this screen</button>
-      <p class="hint" id="imgAutoNote"></p>
-
-      <label>Position</label>
-      <div class="row">
-        <button class="ghost" id="imgFill" title="Fill the whole screen (crops the edges)">Fill</button>
-        <button class="ghost" id="imgFitBtn" title="Show the whole picture (white borders)">Fit</button>
-        <button class="ghost" id="imgRotate" title="Rotate 90°">⟳ Rotate</button>
-      </div>
-      <label>Zoom <b data-out="imgZoom"></b></label>
-      <input type="range" id="imgZoom" min="0.3" max="5" step="0.01" value="1" style="width:100%">
-      <p class="hint">With Move selected, drag the picture on the preview; scroll over it to zoom.</p>
-
-      <label>Tool</label>
-      <div class="tabs" id="imgToolSel" style="margin-bottom:0">
-        <button type="button" data-tool="move" class="on">✥ Move</button>
-        <button type="button" data-tool="brush">✎ Brush</button>
-        <button type="button" data-tool="text">T Text</button>
-        <button type="button" data-tool="erase">⌫ Erase</button>
-      </div>
-      <div class="row" id="imgPenRow" style="margin-top:8px">
-        <select id="imgPenColor" style="width:auto"></select>
-        <span class="hint">Size <b data-out="imgPenSize"></b></span>
-        <input type="range" id="imgPenSize" min="2" max="40" step="1" value="6" style="flex:1">
-      </div>
-      <div id="imgTextRow" style="display:none;margin-top:8px">
-        <input type="text" id="imgText" value="Hello!" placeholder="Type here, then click the preview">
-        <div class="row" style="margin-top:6px">
-          <label style="margin:0"><input type="checkbox" id="imgTextBold" checked> Bold</label>
-          <label style="margin:0"><input type="checkbox" id="imgTextBox"> White box behind</label>
+      <p class="note">🔒 <b>Private:</b> photos and camera shots stay on this device and are never uploaded.</p>
+      <details class="sec" open>
+        <summary>Picture</summary>
+        <div class="row">
+          <label class="btn ghost" style="margin:0;flex:1" title="Choose a picture from this device">🖼 Choose picture<input type="file" id="imgFile" accept="image/*" hidden></label>
+          <button class="ghost" id="camBtn" style="flex:1" title="Take a photo with this device's camera">📷 Camera</button>
         </div>
-        <p class="hint">Click the preview to place the text (size = Size × 4).</p>
-      </div>
-      <div class="row" style="margin-top:8px">
-        <button class="ghost" id="imgUndo" disabled title="Undo (Ctrl+Z)">↶ Undo</button>
-        <button class="ghost" id="imgClearOverlay">Clear text &amp; drawing</button>
-      </div>
-      <p class="hint">Text and drawing sit on top of the photo and stay sharp (not dithered).</p>
+        <input type="file" id="camFallback" accept="image/*" capture="environment" hidden>
+        <div class="row" id="camBar">
+          <button id="camSnap" title="Take the photo">● Snap</button>
+          <button class="ghost" id="camFlip" title="Switch between front and back camera">🔄 Switch</button>
+          <button class="ghost" id="camCancel">Cancel</button>
+          <label class="check"><input type="checkbox" id="camMirror"> Mirror</label>
+          <label class="check"><input type="checkbox" id="camTimer"> 3 s timer</label>
+          <p class="hint" style="margin:2px 0 0;width:100%">The preview shows the camera as the screen will show it. The camera turns off when you snap or cancel.</p>
+        </div>
+        <p class="hint">Or drag a picture onto the preview, or paste one with Ctrl+V.</p>
+        <button id="imgAuto" class="wide" disabled>✨ Auto-optimise for this screen</button>
+        <p class="hint" id="imgAutoNote"></p>
+      </details>
 
-      <label>Dithering</label>
-      <select id="imgAlg">
-        <option value="fs">Floyd–Steinberg (balanced)</option>
-        <option value="atkinson">Atkinson (crisp, high contrast)</option>
-        <option value="stucki">Stucki (smooth)</option>
-        <option value="jarvis">Jarvis–Judice–Ninke (smoothest)</option>
-        <option value="bayer">Bayer (pattern / retro)</option>
-        <option value="none">None (flat colours)</option>
-      </select>
-      <label>Dither strength <b data-out="imgStrength"></b></label>
-      <input type="range" id="imgStrength" min="0" max="2" step="0.05" value="1" style="width:100%">
-      <label>Contrast <b data-out="imgContrast"></b></label>
-      <input type="range" id="imgContrast" min="0.5" max="2" step="0.05" value="1.2" style="width:100%">
-      <label>Brightness <b data-out="imgBright"></b></label>
-      <input type="range" id="imgBright" min="-100" max="100" step="1" value="0" style="width:100%">
-      <label>Colour boost <b data-out="imgSat"></b></label>
-      <input type="range" id="imgSat" min="0" max="3" step="0.05" value="1" style="width:100%">
-      <p class="hint">Raise colour boost to bring out red/yellow; set it to 0 for pure black &amp; white.</p>
-      <div class="row" style="margin-top:8px">
-        <label style="margin:0"><input type="checkbox" id="imgOrig"> Show original</label>
+      <details class="sec" open>
+        <summary>Position</summary>
+        <div class="row">
+          <button class="ghost" id="imgFill" title="Fill the whole screen (crops the edges)">Fill</button>
+          <button class="ghost" id="imgFitBtn" title="Show the whole picture (white borders)">Fit</button>
+          <button class="ghost" id="imgRotate" title="Rotate 90°">⟳ Rotate</button>
+        </div>
+        <label>Zoom <b data-out="imgZoom"></b></label>
+        <input type="range" id="imgZoom" min="0.3" max="5" step="0.01" value="1">
+        <p class="hint">With Move selected, drag the picture on the preview; scroll over it to zoom.</p>
+      </details>
+
+      <details class="sec" open>
+        <summary>Text &amp; drawing</summary>
+        <div class="tabs" id="imgToolSel">
+          <button type="button" data-tool="move" class="on">✥ Move</button>
+          <button type="button" data-tool="brush">✎ Brush</button>
+          <button type="button" data-tool="text">T Text</button>
+          <button type="button" data-tool="erase">⌫ Erase</button>
+        </div>
+        <div class="row" id="imgPenRow" style="margin-top:10px;flex-wrap:nowrap">
+          <select id="imgPenColor" style="width:auto"></select>
+          <span class="hint" style="white-space:nowrap">Size <b data-out="imgPenSize"></b></span>
+          <input type="range" id="imgPenSize" min="2" max="40" step="1" value="6" style="flex:1;min-width:60px">
+        </div>
+        <div id="imgTextRow" style="display:none;margin-top:8px">
+          <input type="text" id="imgText" value="Hello!" placeholder="Type here, then click the preview">
+          <div class="row" style="margin-top:8px">
+            <label class="check"><input type="checkbox" id="imgTextBold" checked> Bold</label>
+            <label class="check"><input type="checkbox" id="imgTextBox"> White box behind</label>
+          </div>
+          <p class="hint">Click the preview to place the text (size = Size × 4).</p>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button class="ghost" id="imgUndo" disabled title="Undo (Ctrl+Z)">↶ Undo</button>
+          <button class="ghost" id="imgClearOverlay">Clear text &amp; drawing</button>
+        </div>
+        <p class="hint">Text and drawing sit on top of the photo and stay sharp (not dithered).</p>
+      </details>
+
+      <details class="sec">
+        <summary>Tone &amp; dithering</summary>
+        <label style="margin-top:4px">Dithering</label>
+        <select id="imgAlg">
+          <option value="fs">Floyd–Steinberg (balanced)</option>
+          <option value="atkinson">Atkinson (crisp, high contrast)</option>
+          <option value="stucki">Stucki (smooth)</option>
+          <option value="jarvis">Jarvis–Judice–Ninke (smoothest)</option>
+          <option value="bayer">Bayer (pattern / retro)</option>
+          <option value="none">None (flat colours)</option>
+        </select>
+        <label>Dither strength <b data-out="imgStrength"></b></label>
+        <input type="range" id="imgStrength" min="0" max="2" step="0.05" value="1">
+        <label>Contrast <b data-out="imgContrast"></b></label>
+        <input type="range" id="imgContrast" min="0.5" max="2" step="0.05" value="1.2">
+        <label>Brightness <b data-out="imgBright"></b></label>
+        <input type="range" id="imgBright" min="-100" max="100" step="1" value="0">
+        <label>Colour boost <b data-out="imgSat"></b></label>
+        <input type="range" id="imgSat" min="0" max="3" step="0.05" value="1">
+        <p class="hint">Raise colour boost to bring out red/yellow; set it to 0 for pure black &amp; white.</p>
+      </details>
+
+      <div class="row" style="border-top:1px solid var(--line);padding-top:12px">
+        <label class="check"><input type="checkbox" id="imgOrig"> Show original</label>
         <button class="ghost" id="imgReset">Reset</button>
         <button class="ghost" id="imgSave" title="Download exactly what the screen will show, to add to the gallery">⬇ Save optimised PNG</button>
       </div>
     </div>
 
-    <div id="log"></div>
+    <details class="sec" style="margin-top:14px">
+      <summary>Activity log</summary>
+      <div id="log"></div>
+    </details>
   </section>
 
   <section class="preview-wrap">
     <canvas id="screen" width="400" height="300"></canvas>
-    <span class="hint" id="sizeHint"></span>
+    <div class="preview-meta">
+      <span class="live-badge" id="camLive"><i></i>LIVE CAMERA</span>
+      <span id="status"></span>
+      <span class="hint" id="sizeHint"></span>
+    </div>
     <div id="brushRing"></div>
   </section>
 </main>
+
+<div id="dock"><span class="dot" id="dockDot"></span><button id="dockBtn" class="primary">Connect screen</button></div>
 
 <script>
 // ---------- Device protocol (from tsl0922/EPD-nRF5 web client) ----------
@@ -328,6 +466,15 @@ function setConn(state, text) {
   $('connPill').className = 'pill ' + state;
   $('connText').textContent = text;
   document.title = (state === 'on' ? '● ' : '○ ') + 'E-ink App Hub';
+  $('dockDot').className = 'dot ' + state;
+  document.body.classList.toggle('connected', state === 'on');
+  syncDock();
+}
+// Phone/tablet bottom bar: one big button that connects first, then sends
+function syncDock() {
+  const b = $('dockBtn'); if (!b) return;
+  if (!chr) { b.textContent = 'Connect screen'; b.disabled = $('connPill').classList.contains('wait'); }
+  else { b.textContent = 'Send to screen ➜'; b.disabled = $('sendBtn').disabled; }
 }
 
 async function write(cmd, data, withResponse = true) {
@@ -374,6 +521,7 @@ async function connect() {
     setConn('on', 'Connected · ' + (device.name || 'screen'));
     $('connectBtn').textContent = 'Disconnect';
     $('sendBtn').disabled = $('clearBtn').disabled = $('battBtn').disabled = $('clockBtn').disabled = false;
+    syncDock();
   } catch (e) {
     log('Connect failed: ' + e.message);
     setConn('off', 'Not connected');
@@ -508,7 +656,8 @@ async function send() {
   if (!chr || sending) return;
   sending = true;
   const t0 = performance.now();
-  $('sendBtn').disabled = true;
+  $('sendBtn').disabled = true; syncDock();
+  if (cam) await snapPhoto(true);   // sending while the camera is live takes the photo first
   try {
     if (app === 'image' && $('imgOrig').checked) { $('imgOrig').checked = false; render(); }  // never send the un-dithered original
     quantize(false); // make sure preview == what goes to the screen
@@ -521,7 +670,7 @@ async function send() {
     setStatus(`Sent in ${s}s — screen is refreshing`); log(`Image sent (${s}s, RLE ${rle ? 'on' : 'off'}, MTU ${mtu})`);
   } catch (e) { log('Send failed: ' + e.message); }
   sending = false;
-  $('sendBtn').disabled = !chr;
+  $('sendBtn').disabled = !chr; syncDock();
   if (app === 'dashboard') scheduleDashLive();   // sending the Dashboard starts (or keeps) the live clock
 }
 // Switch the screen to its built-in calendar (which draws battery voltage) and sync its clock.
@@ -1133,12 +1282,94 @@ function stroke(e) {
 let picture = null, imgRot = 0, imgPanX = 0, imgPanY = 0, imgDrag = null;
 const IMG_DEFAULTS = { imgZoom: 1, imgAlg: 'fs', imgStrength: 1, imgContrast: 1.2, imgBright: 0, imgSat: 1 };
 
-function loadPicture(file) {
+function loadPicture(file, then) {
   if (!file || !file.type.startsWith('image/')) return;
+  if (cam) stopCamera();
   const img = new Image();
-  img.onload = () => { picture = img; imgRot = 0; imgPanX = imgPanY = 0; $('imgZoom').value = 1; $('imgAuto').disabled = false; $('imgAutoNote').textContent = ''; render(); };
+  img.onload = () => { usePicture(img); if (then) then(); };
   img.src = URL.createObjectURL(file);
 }
+// Any image or canvas becomes the Image app's photo (fresh framing)
+function usePicture(pic) {
+  picture = pic; imgRot = 0; imgPanX = imgPanY = 0; $('imgZoom').value = 1;
+  $('imgAuto').disabled = false; $('imgAutoNote').textContent = ''; render();
+}
+
+// ---- Camera: live e-ink viewfinder, then snap ----
+// Frames go into an offscreen canvas that stands in as the picture, so framing, dithering and auto-optimise all apply.
+let cam = null;
+async function startCamera(facing) {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { $('camFallback').click(); return; }
+  const prev = cam ? cam.prev : picture;
+  stopCamera(false);
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: false,
+      video: { facingMode: { ideal: facing || 'environment' }, width: { ideal: 1280 }, height: { ideal: 960 } } });
+    const video = document.createElement('video');
+    video.playsInline = true; video.muted = true; video.srcObject = stream; await video.play();
+    for (let k = 0; k < 30 && video.videoWidth < 16; k++) await new Promise(r => setTimeout(r, 100));   // wait for the first real frame
+    const actual = (stream.getVideoTracks()[0].getSettings() || {}).facingMode;
+    $('camMirror').checked = actual !== 'environment';   // selfie / laptop webcam: mirror like a mirror
+    cam = { stream, video, frame: document.createElement('canvas'), facing: actual || facing || 'user', prev, next: 0 };
+    grabFrame();
+    picture = cam.frame; imgRot = 0; imgPanX = imgPanY = 0; $('imgZoom').value = 1; $('imgOrig').checked = false;
+    $('camBar').classList.add('on'); $('camBtn').disabled = true; $('camLive').classList.add('on');
+    log('Camera on (nothing is recorded or uploaded)');
+    camLoop();
+  } catch (e) {
+    log('Camera unavailable: ' + e.message);
+    if (e.name === 'NotAllowedError') setStatus('Camera permission was blocked: allow it in the address bar to use the live camera');
+    else $('camFallback').click();   // no live camera: let the device's own camera app take the picture
+  }
+}
+function grabFrame() {
+  const { video, frame } = cam;
+  if (frame.width !== video.videoWidth || frame.height !== video.videoHeight) { frame.width = video.videoWidth || 640; frame.height = video.videoHeight || 480; }
+  const c = frame.getContext('2d');
+  c.save();
+  if ($('camMirror').checked) { c.translate(frame.width, 0); c.scale(-1, 1); }
+  c.drawImage(video, 0, 0, frame.width, frame.height);
+  c.restore();
+}
+// Re-dither as fast as the computer allows (kept below ~15 fps so it never hogs the page)
+function camLoop() {
+  if (!cam) return;
+  const now = performance.now();
+  if (now >= cam.next && app === 'image') {
+    grabFrame(); const t = performance.now(); render();
+    cam.next = performance.now() + Math.max(66, (performance.now() - t) * 1.5);
+  }
+  cam.raf = requestAnimationFrame(camLoop);
+}
+function stopCamera(restore) {
+  if (!cam) return;
+  cancelAnimationFrame(cam.raf);
+  cam.stream.getTracks().forEach(t => t.stop());   // camera light goes off
+  const prev = cam.prev; cam = null;
+  $('camBar').classList.remove('on'); $('camBtn').disabled = false; $('camLive').classList.remove('on');
+  $('camSnap').textContent = '● Snap'; $('camSnap').disabled = false;
+  if (restore) { picture = prev; render(); }
+}
+async function snapPhoto(now) {
+  if (!cam) return;
+  if (!now && $('camTimer').checked) {
+    $('camSnap').disabled = true;
+    for (let n = 3; n > 0 && cam; n--) { $('camSnap').textContent = n + '…'; setStatus(`Taking photo in ${n}…`); await new Promise(r => setTimeout(r, 1000)); }
+    if (!cam) return;
+  }
+  grabFrame();
+  const still = document.createElement('canvas'); still.width = cam.frame.width; still.height = cam.frame.height;
+  still.getContext('2d').drawImage(cam.frame, 0, 0);
+  stopCamera(false);
+  usePicture(still); autoOptimize();
+  setStatus('Photo taken: adjust it or press Send'); log('Photo taken (kept on this device only)');
+}
+$('camBtn').onclick = () => startCamera();
+$('camSnap').onclick = () => snapPhoto(false);
+$('camCancel').onclick = () => { stopCamera(true); setStatus(''); log('Camera off'); };
+$('camFlip').onclick = () => cam && startCamera(cam.facing === 'user' ? 'environment' : 'user');
+$('camFallback').addEventListener('change', e => loadPicture(e.target.files[0], autoOptimize));
+document.addEventListener('visibilitychange', () => { if (document.hidden && cam) { stopCamera(true); log('Camera off (page hidden)'); } });
 $('imgFile').addEventListener('change', e => loadPicture(e.target.files[0]));
 canvas.addEventListener('dragover', e => e.preventDefault());
 canvas.addEventListener('drop', e => {
@@ -1398,7 +1629,7 @@ $('imgAuto').onclick = autoOptimize;
 function drawImage() {
   if (!picture) {
     ctx.fillStyle = '#000'; ctx.font = `${H() * 0.06}px ${UI_FONT}`; ctx.textAlign = 'center';
-    ctx.fillText('Choose, drop or paste a picture', W() / 2, H() / 2); ctx.textAlign = 'left';
+    ctx.fillText('Choose a picture or use the camera', W() / 2, H() / 2); ctx.textAlign = 'left';
     drawOverlay(); return;
   }
   paintPicture(ctx);
@@ -1802,16 +2033,22 @@ $('tabs').onclick = e => {
   document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b));
   document.querySelectorAll('.opts').forEach(x => x.classList.toggle('on', x.dataset.app === app));
   if (app !== 'dashboard' && dashTimer) { stopDashLive(); log('Live clock paused (left the Dashboard)'); setStatus(''); }
+  if (app !== 'image' && cam) { stopCamera(true); log('Camera off (left the Image app)'); }
   canvas.style.cursor = app === 'draw' ? 'crosshair' : app === 'image' ? 'grab' : 'default';
+  canvas.classList.toggle('touch', app === 'draw' || app === 'image');   // finger draws/moves instead of scrolling the page
   render();
 };
 $('connectBtn').onclick = connect;
+$('dockBtn').onclick = () => chr ? send() : connect();
+// Screen menu: close when clicking elsewhere or after using one of its actions
+document.addEventListener('click', e => { if (!e.target.closest('#screenMenu')) $('screenMenu').open = false; });
+['battBtn', 'clockBtn', 'clearBtn'].forEach(id => $(id).addEventListener('click', () => { $('screenMenu').open = false; }));
 $('sendBtn').onclick = send;
 $('clearBtn').onclick = clearScreen;
 $('battBtn').onclick = checkBattery;
 $('cityBtn').onclick = loadWeather;
 // Browsers keep a copy of this page for ~10 minutes; check GitHub for a newer one and offer to update
-const APP_VERSION = '2026-11-12b';
+const APP_VERSION = '2026-11-12c';
 async function checkForUpdate() {
   try {
     const t = await (await fetch(location.pathname + '?check=' + Date.now(), { cache: 'no-store' })).text();
