@@ -188,7 +188,6 @@
         <hr>
         <div class="menu-label">Screen type (detected when you connect)</div>
         <select id="driverSel" title="Screen driver (auto-detected on connect)"></select>
-        <div class="hint" id="refreshInfo" style="margin-top:2px"></div>
       </div>
     </details>
   </div>
@@ -515,7 +514,6 @@ function syncDock() {
 
 async function write(cmd, data, withResponse = true) {
   const payload = new Uint8Array([cmd, ...(data || [])]);
-  if (cmd === Cmd.INIT) initSent++;
   if (withResponse) await chr.writeValueWithResponse(payload);
   else await chr.writeValueWithoutResponse(payload);
 }
@@ -534,36 +532,7 @@ function onNotify(e) {
   if (msg.startsWith('mtu=')) {
     mtu = parseInt(msg.slice(4)) || 20;
     rle = msg.includes('rle=1');
-    initReplies++;
-    if (refreshWaiter && initReplies >= refreshWaiter.n) { refreshWaiter(); refreshWaiter = null; }
   }
-}
-
-// ---------- Refresh timing ----------
-// The firmware does the refresh inside its command handler and answers nothing until the panel is done.
-// So right after REFRESH we send INIT (harmless: every send starts with it anyway); its "mtu=" reply
-// can only come back once the refresh has finished, which gives the real refresh time.
-let refreshWaiter = null, initSent = 0, initReplies = 0;   // each INIT gets one "mtu=" reply, in order
-function refreshStats() { try { return JSON.parse(localStorage.getItem('refreshTimes') || '{}'); } catch (_) { return {}; } }
-async function measureRefresh(sentS) {
-  const t = performance.now();
-  const done = new Promise(r => { refreshWaiter = r; refreshWaiter.n = initSent + 1; });   // wait for the reply to THIS INIT
-  write(Cmd.INIT).catch(() => {});
-  const ok = await Promise.race([done.then(() => true), new Promise(r => setTimeout(() => r(false), 90000))]);
-  refreshWaiter = null;
-  if (!ok) { setStatus(`Sent in ${sentS}s`); log('Refresh time: no reply within 90 s'); return; }
-  const secs = (performance.now() - t) / 1000, drv = $('driverSel').value, all = refreshStats();
-  const list = (all[drv] || []).concat(+secs.toFixed(1)).slice(-20); all[drv] = list;
-  try { localStorage.setItem('refreshTimes', JSON.stringify(all)); } catch (_) {}
-  setStatus(`✓ Done · sent in ${sentS}s · screen refreshed in ${secs.toFixed(1)}s`);
-  log(`Screen refresh took ${secs.toFixed(1)} s`);
-  showRefreshStats();
-}
-function showRefreshStats() {
-  const list = refreshStats()[$('driverSel').value] || [], el = $('refreshInfo');
-  if (!list.length) { el.textContent = 'Refresh time: send something to measure it'; return; }
-  const avg = list.reduce((a, b) => a + b, 0) / list.length;
-  el.textContent = `Refresh time: last ${list[list.length - 1]} s · average ${avg.toFixed(1)} s (${list.length} send${list.length > 1 ? 's' : ''}) · fastest ${Math.min(...list)} s, slowest ${Math.max(...list)} s`;
 }
 
 async function connect() {
@@ -580,7 +549,7 @@ async function connect() {
       const ver = await (await svc.getCharacteristic(VER)).readValue();
       log('Firmware version 0x' + ver.getUint8(0).toString(16));
     } catch (_) {}
-    notifyIdx = 0; initSent = initReplies = 0;
+    notifyIdx = 0;
     await chr.startNotifications();
     chr.addEventListener('characteristicvaluechanged', onNotify);
     await write(Cmd.INIT);
@@ -733,8 +702,7 @@ async function send() {
     else { await writeImage(bw, 'bw'); if (red) await writeImage(red, 'red'); }
     await write(Cmd.REFRESH);
     const s = ((performance.now() - t0) / 1000).toFixed(1);
-    setStatus(`Sent in ${s}s · screen is refreshing…`); log(`Image sent (${s}s, RLE ${rle ? 'on' : 'off'}, MTU ${mtu})`);
-    await measureRefresh(s);
+    setStatus(`Sent in ${s}s · screen is refreshing`); log(`Image sent (${s}s, RLE ${rle ? 'on' : 'off'}, MTU ${mtu})`);
   } catch (e) { log('Send failed: ' + e.message); }
   sending = false;
   $('sendBtn').disabled = !chr; syncDock();
@@ -2207,7 +2175,6 @@ function applyDriver() {
   try { localStorage.setItem('driver', $('driverSel').value); } catch (_) {}
   $('penColor').innerHTML = palette().map(c => `<option value="${c === 'red' ? '#dc1e1e' : c === 'yellow' ? '#f0c800' : c}">${c === 'white' ? 'white (eraser)' : c}</option>`).join('');
   $('imgPenColor').innerHTML = palette().map(c => `<option value="${c === 'red' ? '#dc1e1e' : c === 'yellow' ? '#f0c800' : c}">${c}</option>`).join('');
-  showRefreshStats();
   render();
 }
 for (const [id, [label]] of Object.entries(DRIVERS)) $('driverSel').add(new Option(label, id));
@@ -2236,7 +2203,7 @@ $('clearBtn').onclick = clearScreen;
 $('battBtn').onclick = checkBattery;
 $('cityBtn').onclick = loadWeather;
 // Browsers keep a copy of this page for ~10 minutes; check GitHub for a newer one and offer to update
-const APP_VERSION = '2026-11-12e';
+const APP_VERSION = '2026-11-13a';
 async function checkForUpdate() {
   try {
     const t = await (await fetch(location.pathname + '?check=' + Date.now(), { cache: 'no-store' })).text();
