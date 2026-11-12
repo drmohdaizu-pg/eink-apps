@@ -119,6 +119,16 @@
   #galGrid img.on { border-color:var(--ink); }
   #log { font: 12px/1.45 ui-monospace, Consolas, monospace; color:var(--muted); max-height:160px; overflow:auto; white-space:pre-wrap; }
 
+  /* GIF frame picker */
+  #gifStrip { display:grid; grid-template-columns:repeat(4, 1fr); gap:6px; max-height:270px; overflow:auto; margin-top:10px; padding:2px; }
+  .gf { position:relative; border:2px solid var(--line); border-radius:7px; cursor:pointer; background:#fff; aspect-ratio:4/3; overflow:hidden; opacity:.55; }
+  .gf.sel { opacity:1; border-color:#d9a9a3; }
+  .gf.cur { border-color:var(--ink); opacity:1; }
+  .gf.playing { box-shadow:0 0 0 3px var(--accent); }
+  .gf canvas { width:100%; height:100%; object-fit:contain; display:block; }
+  .gf input { position:absolute; top:4px; left:4px; }
+  .gf span { position:absolute; bottom:2px; right:3px; font-size:10px; font-weight:700; background:rgba(255,255,255,.9); padding:0 4px; border-radius:4px; }
+
   /* Camera */
   #camBar { display:none; margin-top:10px; padding:10px; border-radius:10px; background:var(--soft); border:1px solid var(--line); }
   #camBar.on { display:flex; }
@@ -343,6 +353,31 @@ Knock loudly!</textarea>
         <p class="hint" id="imgAutoNote"></p>
       </details>
 
+      <details class="sec" id="gifSec" open style="display:none">
+        <summary>GIF frames</summary>
+        <p class="hint" id="gifInfo" style="margin-top:0"></p>
+        <div class="row">
+          <button class="ghost" id="gifEven" title="Tick 8 frames spread evenly through the GIF">Pick 8 evenly</button>
+          <button class="ghost" id="gifAll">All</button>
+          <button class="ghost" id="gifNone">None</button>
+        </div>
+        <div id="gifStrip"></div>
+        <div class="row" style="margin-top:10px;flex-wrap:nowrap">
+          <label style="margin:0;white-space:nowrap">Change every</label>
+          <select id="gifEvery">
+            <option value="30">30 seconds</option>
+            <option value="60" selected>1 minute</option>
+            <option value="120">2 minutes</option>
+            <option value="300">5 minutes</option>
+            <option value="900">15 minutes</option>
+            <option value="3600">1 hour</option>
+          </select>
+        </div>
+        <label class="check"><input type="checkbox" id="gifLoop" checked> Loop (start again after the last frame)</label>
+        <button id="gifPlay" class="wide" style="margin-top:8px">▶ Start slideshow</button>
+        <p class="hint">Click a frame to preview it; tick it to include it. Every frame uses the framing, tone and text set below. The slideshow runs while the laptop stays connected with this tab open.</p>
+      </details>
+
       <details class="sec" open>
         <summary>Position</summary>
         <div class="row">
@@ -564,7 +599,7 @@ function onDisconnect() {
   setConn('off', 'Disconnected');
   $('connectBtn').textContent = 'Connect screen';
   $('sendBtn').disabled = $('clearBtn').disabled = $('battBtn').disabled = $('clockBtn').disabled = true;
-  stopDashLive();
+  stopDashLive(); stopSlideshow('screen disconnected');
   log('Disconnected');
 }
 
@@ -1317,9 +1352,123 @@ const IMG_DEFAULTS = { imgZoom: 1, imgAlg: 'fs', imgStrength: 1, imgContrast: 1.
 function loadPicture(file, then) {
   if (!file || !file.type.startsWith('image/')) return;
   if (cam) stopCamera();
+  closeGif();
   const img = new Image();
-  img.onload = () => { usePicture(img); if (then) then(); };
+  img.onload = () => { usePicture(img); if (then) then(); openAnimated(file); };
   img.src = URL.createObjectURL(file);
+}
+
+// ---- Animated GIF: frame picker + slow slideshow ----
+// Frames are decoded on demand with the browser's ImageDecoder, so even long GIFs use little memory.
+let gif = null, show = null;
+const GIF_MAX_FRAMES = 400;
+async function openAnimated(blob) {
+  if (!/gif|webp|png/i.test(blob.type) || !('ImageDecoder' in window)) return;
+  try {
+    const dec = new ImageDecoder({ data: await blob.arrayBuffer(), type: blob.type });
+    await dec.tracks.ready; await dec.completed;
+    const n = Math.min(GIF_MAX_FRAMES, dec.tracks.selectedTrack.frameCount);
+    if (n < 2) { dec.close(); return; }
+    closeGif();
+    gif = { dec, n, sel: new Set(), cur: 0, total: dec.tracks.selectedTrack.frameCount };
+    evenPick(8);
+    $('gifSec').style.display = ''; $('gifSec').open = true;
+    $('gifStrip').innerHTML = '';
+    for (let i = 0; i < n; i++) {
+      const tile = document.createElement('div'); tile.className = 'gf'; tile.dataset.i = i; tile.title = 'Frame ' + (i + 1);
+      tile.innerHTML = `<canvas width="96" height="72"></canvas><input type="checkbox" title="Include in the slideshow"><span>${i + 1}</span>`;
+      $('gifStrip').appendChild(tile);
+    }
+    markGif();
+    log(`GIF: ${gif.total} frames${gif.total > n ? ` (first ${n} shown)` : ''}`);
+    // thumbnails, a few at a time so the page stays responsive
+    for (let i = 0; i < n && gif && gif.dec === dec; i++) {
+      const { image } = await dec.decode({ frameIndex: i });
+      const c = $('gifStrip').children[i]?.querySelector('canvas');
+      if (c) { const k = Math.min(96 / image.displayWidth, 72 / image.displayHeight), w = image.displayWidth * k, h = image.displayHeight * k;
+        const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, 96, 72); x.drawImage(image, (96 - w) / 2, (72 - h) / 2, w, h); }
+      image.close();
+      if (i % 8 === 7) await new Promise(r => setTimeout(r));
+    }
+  } catch (e) { log('Could not read GIF frames: ' + e.message); }
+}
+// One frame at full size as a canvas (long side capped at 1600 px)
+async function gifFrame(i) {
+  const { image } = await gif.dec.decode({ frameIndex: i });
+  const k = Math.min(1, 1600 / Math.max(image.displayWidth, image.displayHeight));
+  const c = document.createElement('canvas'); c.width = Math.round(image.displayWidth * k); c.height = Math.round(image.displayHeight * k);
+  const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(image, 0, 0, c.width, c.height);
+  image.close();
+  return c;
+}
+// Show a frame in the preview, keeping the current framing and tone settings
+async function showGifFrame(i) {
+  if (!gif) return;
+  gif.cur = i; picture = await gifFrame(i); $('imgAuto').disabled = false; markGif(); render();
+}
+function evenPick(k) {
+  gif.sel.clear();
+  const m = Math.min(k, gif.n);
+  for (let j = 0; j < m; j++) gif.sel.add(Math.round(j * (gif.n - 1) / Math.max(1, m - 1)));
+}
+function markGif() {
+  if (!gif) return;
+  const playing = show ? show.list[show.i % show.list.length] : -1;
+  [...$('gifStrip').children].forEach(t => {
+    const i = +t.dataset.i;
+    t.classList.toggle('sel', gif.sel.has(i)); t.classList.toggle('cur', i === gif.cur); t.classList.toggle('playing', i === playing);
+    t.querySelector('input').checked = gif.sel.has(i);
+  });
+  $('gifInfo').textContent = `${gif.total} frames · ${gif.sel.size} in the slideshow` + (gif.total > gif.n ? ` · first ${gif.n} shown` : '');
+  $('gifPlay').disabled = !show && !gif.sel.size;
+}
+function closeGif() {
+  stopSlideshow();
+  if (gif) { try { gif.dec.close(); } catch (_) {} gif = null; }
+  $('gifSec').style.display = 'none'; $('gifStrip').innerHTML = '';
+}
+$('gifStrip').addEventListener('click', e => {
+  const t = e.target.closest('.gf'); if (!t || !gif) return;
+  const i = +t.dataset.i;
+  if (e.target.tagName === 'INPUT') { e.target.checked ? gif.sel.add(i) : gif.sel.delete(i); markGif(); return; }
+  showGifFrame(i);
+});
+$('gifEven').onclick = () => { if (gif) { evenPick(8); markGif(); } };
+$('gifAll').onclick = () => { if (gif) { for (let i = 0; i < gif.n; i++) gif.sel.add(i); markGif(); } };
+$('gifNone').onclick = () => { if (gif) { gif.sel.clear(); markGif(); } };
+$('gifPlay').onclick = () => show ? stopSlideshow('stopped') : startSlideshow();
+
+function startSlideshow() {
+  if (!gif || !gif.sel.size) return;
+  if (!chr) { setStatus('Connect the screen first, then start the slideshow'); return; }
+  show = { list: [...gif.sel].sort((a, b) => a - b), i: 0, timer: null };
+  $('gifPlay').textContent = '■ Stop slideshow'; $('gifPlay').classList.add('primary');
+  log(`Slideshow started: ${show.list.length} frames, every ${$('gifEvery').selectedOptions[0].text}`);
+  slideStep();
+}
+async function slideStep() {
+  const me = show; if (!me) return;
+  if (!chr) { stopSlideshow('screen disconnected'); return; }
+  if (app !== 'image') { stopSlideshow('left the Image app'); return; }
+  while (sending) await new Promise(r => setTimeout(r, 200));   // let an earlier send/refresh finish first
+  if (show !== me) return;
+  const k = show.i % show.list.length, t0 = Date.now();
+  await showGifFrame(show.list[k]); markGif();
+  await send();
+  if (show !== me) return;
+  show.i++;
+  if (!$('gifLoop').checked && show.i >= show.list.length) { stopSlideshow('finished'); return; }
+  const wait = Math.max(0, +$('gifEvery').value * 1000 - (Date.now() - t0));
+  show.timer = setTimeout(slideStep, wait);
+  const at = new Date(Date.now() + wait).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+  setStatus(`Slideshow: frame ${k + 1} of ${show.list.length} shown · next at ${at}`);
+}
+function stopSlideshow(why) {
+  if (!show) return;
+  clearTimeout(show.timer); show = null;
+  $('gifPlay').textContent = '▶ Start slideshow'; $('gifPlay').classList.remove('primary');
+  markGif();
+  if (why) { log('Slideshow ' + (why === 'stopped' || why === 'finished' ? why : 'paused: ' + why)); setStatus(why === 'finished' ? 'Slideshow finished' : ''); }
 }
 // Any image or canvas becomes the Image app's photo (fresh framing)
 function usePicture(pic) {
@@ -1344,6 +1493,7 @@ async function startCamera(facing) {
     $('camMirror').checked = actual !== 'environment';   // selfie / laptop webcam: mirror like a mirror
     cam = { stream, video, frame: document.createElement('canvas'), facing: actual || facing || 'user', prev, next: 0 };
     grabFrame();
+    closeGif();
     picture = cam.frame; imgRot = 0; imgPanX = imgPanY = 0; $('imgZoom').value = 1; $('imgOrig').checked = false;
     $('camBar').classList.add('on'); $('camBtn').disabled = true; $('camLive').classList.add('on');
     log('Camera on (nothing is recorded or uploaded)');
@@ -1921,11 +2071,15 @@ function drawGallery() {
 function editGalleryInImage() {
   if (!galPic) return;
   if (picture && picture !== galPic && !confirm('Open this gallery picture in the Image app? It replaces the photo currently open there.')) return;
+  if (cam) stopCamera(); closeGif();
   picture = galPic; imgRot = 0; imgPanX = imgPanY = 0;
   $('imgZoom').value = galOpts.zoom; $('imgContrast').value = galOpts.con; $('imgBright').value = galOpts.bri;
   $('imgSat').value = galOpts.sat; $('imgAlg').value = galOpts.alg; $('imgStrength').value = galOpts.str;
   $('imgOrig').checked = false; $('imgAuto').disabled = false; $('imgAutoNote').textContent = '';
   document.querySelector('#tabs [data-app=image]').click();
+  // An animated GIF from the gallery opens with its frame picker too
+  const it = (galItems || []).find(i => i.name === galSel);
+  if (it && /\.gif$/i.test(it.name)) fetch(it.url).then(r => r.blob()).then(openAnimated).catch(() => {});
 }
 $('galRefresh').onclick = () => loadGallery(true);
 $('galEdit').onclick = editGalleryInImage;
@@ -2067,6 +2221,7 @@ $('tabs').onclick = e => {
   document.querySelectorAll('.opts').forEach(x => x.classList.toggle('on', x.dataset.app === app));
   if (app !== 'dashboard' && dashTimer) { stopDashLive(); log('Live clock paused (left the Dashboard)'); setStatus(''); }
   if (app !== 'image' && cam) { stopCamera(true); log('Camera off (left the Image app)'); }
+  if (app !== 'image' && show) stopSlideshow('left the Image app');
   canvas.style.cursor = app === 'draw' ? 'crosshair' : app === 'image' ? 'grab' : 'default';
   canvas.classList.toggle('touch', app === 'draw' || app === 'image');   // finger draws/moves instead of scrolling the page
   render();
@@ -2081,7 +2236,7 @@ $('clearBtn').onclick = clearScreen;
 $('battBtn').onclick = checkBattery;
 $('cityBtn').onclick = loadWeather;
 // Browsers keep a copy of this page for ~10 minutes; check GitHub for a newer one and offer to update
-const APP_VERSION = '2026-11-12d';
+const APP_VERSION = '2026-11-12e';
 async function checkForUpdate() {
   try {
     const t = await (await fetch(location.pathname + '?check=' + Date.now(), { cache: 'no-store' })).text();

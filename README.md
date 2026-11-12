@@ -12,7 +12,7 @@ A small web app for e-ink screens running the [EPD-nRF5](https://github.com/tsl0
 - **Quote**: 50 funny, 50 inspiring and 50 scientists' quotes, plus **My quotes** (your own, saved in your browser). Shuffled with no repeats, with Previous / Next
 - **To-do**: checklist with red priorities and a progress bar (dark or light)
 - **Draw**: brush, fill, undo
-- **Image** (private, nothing is uploaded): photos or the **camera** (live e-ink viewfinder, then Snap), with dithering, crop/zoom/rotate, auto-optimise, text and drawing on top, and **Save optimised PNG**
+- **Image** (private, nothing is uploaded): photos, **animated GIFs** (pick frames for a slow slideshow) or the **camera** (live e-ink viewfinder, then Snap), with dithering, crop/zoom/rotate, auto-optimise, text and drawing on top, and **Save optimised PNG**
 - **Gallery** (public): pictures from this repository's `gallery/` folder, one tap to load and send. It keeps its own picture, so it never replaces the photo open in Image.
 
 Every app can show a small battery icon (enter the voltage from **Check battery**).
