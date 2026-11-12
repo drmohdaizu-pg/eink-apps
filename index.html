@@ -160,13 +160,22 @@ Knock loudly!</textarea>
 
     <div class="opts" data-app="quote">
       <label>Mood</label>
-      <select id="quoteMood"><option value="funny" selected>Funny</option><option value="inspiring">Inspiring</option><option value="science">Scientists</option></select>
+      <select id="quoteMood"><option value="funny" selected>Funny</option><option value="inspiring">Inspiring</option><option value="science">Scientists</option><option value="mine">My quotes</option></select>
+      <div id="mineBox" style="display:none">
+        <label>Quote</label>
+        <textarea id="mineText" style="min-height:70px" placeholder="Type or paste a quote"></textarea>
+        <label>Author (optional)</label>
+        <div class="row"><input type="text" id="mineAuthor" placeholder="e.g. Ibn Sina" style="flex:1"><button id="mineAdd">Add</button></div>
+        <p class="hint" id="mineCount" style="margin-bottom:0"></p>
+        <ul id="mineList" style="list-style:none;padding:0;margin:4px 0 0;max-height:220px;overflow:auto"></ul>
+        <p class="hint">Click a quote to show it. Saved only in this browser, so they won't appear on another computer.</p>
+      </div>
       <div class="row" style="margin-top:10px">
         <button class="ghost" id="quotePrev" title="Previous quote">◀ Previous</button>
         <button class="ghost" id="quoteNext" title="Next quote">Next ▶</button>
         <span class="hint" id="quoteCount"></span>
       </div>
-      <p class="hint">50 quotes per mood, in a shuffled order: every quote appears once before any repeats.</p>
+      <p class="hint">Shuffled order: every quote appears once before any repeats. Built-in moods have 50 quotes each.</p>
     </div>
 
     <div class="opts" data-app="draw">
@@ -915,8 +924,12 @@ const SCIENCE = [
   ["All science is either physics or stamp collecting.", "Ernest Rutherford"],
   ["An experiment is a question which science poses to nature, and a measurement is the recording of nature's answer.", "Max Planck"],
 ];
-const QUOTE_SETS = { funny: FUNNY, inspiring: INSPIRING, science: SCIENCE };
-const QUOTES = () => QUOTE_SETS[$('quoteMood').value] || FUNNY;
+// Your own quotes: saved only in this browser
+let MINE = [];
+try { MINE = (JSON.parse(localStorage.getItem('myQuotes')) || []).filter(x => Array.isArray(x) && x[0]); } catch (_) {}
+const MINE_EMPTY = ['Add your own quotes in the box on the left.', ''];
+const QUOTE_SETS = { funny: FUNNY, inspiring: INSPIRING, science: SCIENCE, mine: MINE };
+const QUOTES = () => { const l = QUOTE_SETS[$('quoteMood').value] || FUNNY; return l.length ? l : [MINE_EMPTY]; };
 
 // Each mood has its own shuffled order: Next walks through every quote once before any repeats,
 // Previous steps back through what you've already seen.
@@ -948,7 +961,9 @@ function updateQuoteNav() {
   const d = deck(), n = QUOTES().length;
   if (!d.history.length) currentQuote();
   $('quotePrev').disabled = d.pos === 0;
-  $('quoteCount').textContent = `${(d.pos % n) + 1} / ${n}`;
+  const empty = !(QUOTE_SETS[$('quoteMood').value] || FUNNY).length;
+  $('quoteNext').disabled = empty;
+  $('quoteCount').textContent = empty ? '' : `${(d.pos % n) + 1} / ${n}`;
 }
 function drawQuote() {
   const [q, a] = currentQuote(), pad = W() * 0.1;
@@ -964,10 +979,48 @@ function drawQuote() {
   }
   let y = H() * 0.48 - (lines.length * size * 1.25) / 2 + size;
   lines.forEach(l => { ctx.fillText(l, pad, y); y += size * 1.25; });
-  ctx.font = `${H() * 0.06}px ${QUOTE_FONT}`;
-  ctx.textAlign = 'right';
-  ctx.fillText('— ' + a, W() - pad, H() - pad * 0.6);
-  ctx.textAlign = 'left';
+  if (a) {
+    ctx.font = `${H() * 0.06}px ${QUOTE_FONT}`;
+    ctx.textAlign = 'right';
+    ctx.fillText(ellipsize('— ' + a, W() - pad * 2), W() - pad, H() - pad * 0.6);
+    ctx.textAlign = 'left';
+  }
+}
+
+// ---------- My quotes editor ----------
+function saveMine() { try { localStorage.setItem('myQuotes', JSON.stringify(MINE)); } catch (_) {} }
+function showMine(i) {   // jump straight to one of your quotes
+  // this quote starts the round, the rest follow in a shuffled order (so Next never repeats it)
+  const rest = shuffledOrder(MINE.length).filter(k => k !== i);
+  quoteDeck.mine = { order: [i, ...rest], pos: 0, history: [i] };
+  updateQuoteNav(); render();
+}
+function renderMineList() {
+  $('mineBox').style.display = $('quoteMood').value === 'mine' ? '' : 'none';
+  const ul = $('mineList'); ul.innerHTML = '';
+  MINE.forEach(([q, a], i) => {
+    const li = document.createElement('li');
+    li.style.cssText = 'display:flex;gap:6px;align-items:flex-start;padding:5px 0;border-bottom:1px solid var(--line);font-size:13px';
+    const t = document.createElement('span'); t.style.cssText = 'flex:1;cursor:pointer';
+    t.title = 'Show on screen'; t.textContent = `“${q}”` + (a ? ` — ${a}` : '');
+    t.onclick = () => showMine(i);
+    const del = document.createElement('button'); del.className = 'ghost'; del.textContent = '✕'; del.title = 'Delete';
+    del.style.cssText = 'padding:2px 8px';
+    del.onclick = () => {
+      if (!confirm('Delete this quote?')) return;
+      MINE.splice(i, 1); saveMine(); delete quoteDeck.mine; renderMineList(); updateQuoteNav(); render();
+    };
+    li.append(t, del); ul.appendChild(li);
+  });
+  $('mineCount').textContent = MINE.length ? `${MINE.length} quote${MINE.length > 1 ? 's' : ''} saved in this browser` : 'No quotes yet';
+}
+function addMine() {
+  const q = $('mineText').value.trim().replace(/^["“”']+|["“”']+$/g, ''), a = $('mineAuthor').value.trim();
+  if (!q) { $('mineText').focus(); return; }
+  if (MINE.some(([x]) => x.toLowerCase() === q.toLowerCase())) { alert('That quote is already in your list.'); return; }
+  MINE.push([q, a]); saveMine();
+  $('mineText').value = ''; $('mineAuthor').value = '';
+  renderMineList(); showMine(MINE.length - 1);   // show the new quote straight away
 }
 
 // Draw (persistent layer)
@@ -1751,7 +1804,10 @@ $('dashClock').onchange = () => {
 };
 $('quoteNext').onclick = nextQuote;
 $('quotePrev').onclick = prevQuote;
-$('quoteMood').onchange = () => { updateQuoteNav(); render(); };   // each mood remembers its own place
+$('quoteMood').onchange = () => { renderMineList(); updateQuoteNav(); render(); };   // each mood remembers its own place
+$('mineAdd').onclick = addMine;
+$('mineAuthor').addEventListener('keydown', e => { if (e.key === 'Enter') addMine(); });
+renderMineList();
 updateQuoteNav();
 $('drawClear').onclick = () => { saveUndo(); drawLayer = null; render(); };
 try { $('battV').value = localStorage.getItem('battV') || ''; $('battShow').checked = localStorage.getItem('battShow') !== '0'; } catch (_) {}

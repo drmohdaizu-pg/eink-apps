@@ -9,7 +9,7 @@ A small web app for e-ink screens running the [EPD-nRF5](https://github.com/tsl0
 - **Dashboard**: date, clock, month calendar, weather and air quality for your city. The clock can update itself every 5 min to 1 hour while the laptop stays connected.
 - **Note**: big auto-sized text, first line in red
 - **Away**: out-of-office card with status, "back at" time or date, message and contact line
-- **Quote**: 50 funny, 50 inspiring and 50 scientists' quotes, shuffled with no repeats, with Previous / Next
+- **Quote**: 50 funny, 50 inspiring and 50 scientists' quotes, plus **My quotes** (your own, saved in your browser). Shuffled with no repeats, with Previous / Next
 - **To-do**: checklist with red priorities and a progress bar (dark or light)
 - **Draw**: brush, fill, undo
 - **Image** (private, nothing is uploaded): photos with dithering, crop/zoom/rotate, auto-optimise, text and drawing on top, and **Save optimised PNG**
