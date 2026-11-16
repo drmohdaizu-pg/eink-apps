@@ -200,7 +200,6 @@
       <button data-app="dashboard" class="on"><span>🗓</span>Dashboard</button>
       <button data-app="note"><span>📝</span>Note</button>
       <button data-app="away"><span>🚪</span>Away</button>
-      <button data-app="attend"><span>⏱</span>Kehadiran</button>
       <button data-app="quote"><span>❝</span>Quote</button>
       <button data-app="todo"><span>☑</span>To-do</button>
       <button data-app="draw"><span>✎</span>Draw</button>
@@ -213,6 +212,13 @@
       <div class="row"><input type="text" id="city" placeholder="e.g. Kuala Lumpur" style="flex:1"><button class="ghost" id="cityBtn">Load</button></div>
       <label>Greeting</label>
       <input type="text" id="greeting" value="Have a good day">
+      <label class="check"><input type="checkbox" id="dashOutShow" checked> Show my clock-out time (instead of the greeting)</label>
+      <div class="row" style="flex-wrap:nowrap;margin-top:6px">
+        <label style="margin:0;white-space:nowrap">Clocked in at</label>
+        <input type="time" id="dashIn" style="flex:1">
+        <button class="ghost" id="dashInNow" title="Use the time now">Now</button>
+      </div>
+      <p class="hint" style="margin:6px 0 0"><b id="dashOutNote"></b><br>Filled in automatically the first time you open the hub on a weekday morning; change it if needed. In 8:00–9:00 → out 9 hours later; before 8:00 → 5:00 PM; after 9:00 → 6:00 PM.</p>
       <label>Clock</label>
       <select id="dashClock">
         <option value="off">Off</option>
@@ -281,39 +287,6 @@ Knock loudly!</textarea>
       <select id="awayStyle"><option value="red" selected>Red banner</option><option value="black">Black banner</option></select>
       <label><input type="checkbox" id="awayStamp" checked> Show "updated" time</label>
       <p class="hint">"Tomorrow" and weekday names are worked out when you press Send, so send again if the card stays up over several days.</p>
-    </div>
-
-    <div class="opts" data-app="attend">
-      <label>Masuk (clock in)</label>
-      <div class="row" style="flex-wrap:nowrap">
-        <input type="time" id="attIn" style="flex:1">
-        <button class="ghost" id="attInNow" title="Use the time now">Now</button>
-      </div>
-      <label>Keluar (clock out), leave empty until you leave</label>
-      <div class="row" style="flex-wrap:nowrap">
-        <input type="time" id="attOut" style="flex:1">
-        <button class="ghost" id="attOutNow" title="Use the time now">Now</button>
-        <button class="ghost" id="attOutClear" title="Clear clock-out">✕</button>
-      </div>
-      <p class="hint" id="attSummary"></p>
-      <details class="sec">
-        <summary>Working hours</summary>
-        <div class="row" style="flex-wrap:nowrap">
-          <label style="margin:0;flex:1">Hours per day (incl. lunch)</label>
-          <input type="number" id="attHours" min="1" max="14" step="0.25" value="9" style="width:90px">
-        </div>
-        <div class="row" style="flex-wrap:nowrap;margin-top:8px">
-          <label style="margin:0;flex:1">Friday</label>
-          <input type="number" id="attFriHours" min="1" max="14" step="0.25" value="9" style="width:90px">
-        </div>
-        <label>Earliest start counted (optional)</label>
-        <input type="time" id="attEarliest">
-        <p class="hint" style="margin:4px 0 0">If you clock in before this, your out time is worked out from this time instead.</p>
-        <label>Late after (optional)</label>
-        <input type="time" id="attLate">
-        <p class="hint" style="margin:4px 0 0">Clock-ins after this show a red <b>LEWAT</b> tag.</p>
-      </details>
-      <p class="hint">Saved only in this browser. Times clear automatically the next day.</p>
     </div>
 
     <div class="opts" data-app="quote">
@@ -898,7 +871,14 @@ ctx.fillText(now.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
     ctx.fillText('Add a city for weather', pad, wy + h * 0.04);
   }
   ctx.font = `italic ${Math.round(h * 0.05)}px ${QUOTE_FONT}`;
-  ctx.fillText($('greeting').value, pad, h - pad);
+  const outM = $('dashOutShow').checked ? (clockInStore().date === todayKey() ? clockOutMin() : null) : null;
+  if (outM != null) {
+    ctx.font = `bold ${Math.round(h * 0.06)}px ${QUOTE_FONT}`;
+    ctx.fillText('Keluar ', pad, h - pad);
+    const lw = ctx.measureText('Keluar ').width;
+    ctx.font = `bold ${Math.round(h * 0.075)}px ${NUM_FONT}`; ctx.fillStyle = accent();
+    ctx.fillText(time12(outM), pad + lw, h - pad); ctx.fillStyle = '#000';
+  } else ctx.fillText($('greeting').value, pad, h - pad);
   // Divider
   ctx.fillRect(leftW, pad, 2, h - pad * 2);
   // Clock (top of the right column): "2:45" big, "PM" small in the accent colour
@@ -2188,101 +2168,41 @@ function drawAway() {
   ctx.textAlign = 'left';
 }
 
-// ---------- Kehadiran: clock-in / expected or actual clock-out ----------
-const ATT_IDS = ['attIn', 'attOut', 'attHours', 'attFriHours', 'attEarliest', 'attLate'];
+// ---------- Clock-out time on the Dashboard ----------
+// Rule: in between 8:00 and 9:00 → out 9 hours later. Before 8:00 counts as 8:00 (out 5 PM); after 9:00 counts as 9:00 (out 6 PM).
+const OUT_FROM = 8 * 60, OUT_TO = 9 * 60, OUT_DAY = 9 * 60;
 const todayKey = () => localISO(new Date()).slice(0, 10);
 const toMin = t => { const m = /^(\d{1,2}):(\d{2})/.exec(t || ''); return m ? +m[1] * 60 + +m[2] : null; };
-const hhmm = m => `${String(Math.floor(((m % 1440) + 1440) % 1440 / 60)).padStart(2, '0')}:${String(((m % 60) + 60) % 60).padStart(2, '0')}`;
-const dur = m => `${Math.floor(m / 60)}j ${String(m % 60).padStart(2, '0')}m`;   // jam / minit
-function saveAtt() {
-  const o = { date: todayKey() }; ATT_IDS.forEach(id => o[id] = $(id).value);
-  try { localStorage.setItem('kehadiran', JSON.stringify(o)); } catch (_) {}
+const hhmm = m => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+const time12 = m => new Date(2000, 0, 1, Math.floor(m / 60), m % 60).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+function clockInStore() { try { return JSON.parse(localStorage.getItem('clockIn') || '{}'); } catch (_) { return {}; } }
+function loadClockIn() { const o = clockInStore(); $('dashIn').value = o.date === todayKey() ? (o.t || '') : ''; }
+function saveClockIn() { try { localStorage.setItem('clockIn', JSON.stringify({ date: todayKey(), t: $('dashIn').value })); } catch (_) {} }
+function clockOutMin() {
+  const m = toMin($('dashIn').value);
+  return m == null ? null : Math.min(Math.max(m, OUT_FROM), OUT_TO) + OUT_DAY;
 }
-function loadAtt() {
-  try {
-    const o = JSON.parse(localStorage.getItem('kehadiran') || '{}');
-    ATT_IDS.forEach(id => { if (o[id] != null) $(id).value = o[id]; });
-    if (o.date && o.date !== todayKey()) { $('attIn').value = $('attOut').value = ''; saveAtt(); }   // new day: start fresh
-  } catch (_) {}
+function clockOutNote() {
+  const out = clockOutMin();
+  $('dashOutNote').textContent = out == null ? 'No clock-in time for today yet.' : `Clock out at ${time12(out)}`;
 }
-loadAtt();
-function attCalc() {
-  const now = new Date(), fri = now.getDay() === 5;
-  const inM = toMin($('attIn').value), outM = toMin($('attOut').value);
-  const hours = Math.round((+(fri ? $('attFriHours').value : $('attHours').value) || 9) * 60);
-  const earliest = toMin($('attEarliest').value), lateAfter = toMin($('attLate').value);
-  if (inM == null) return { inM: null };
-  const start = earliest != null ? Math.max(inM, earliest) : inM;
-  const expected = start + hours;
-  return { inM, outM, hours, expected, late: lateAfter != null && inM > lateAfter,
-    worked: outM != null ? outM - inM : null, early: outM != null && outM < expected ? expected - outM : 0 };
-}
-function attSummary() {
-  const a = attCalc();
-  $('attSummary').textContent = a.inM == null ? 'Enter your clock-in time.'
-    : a.outM != null ? `Worked ${dur(Math.max(0, a.worked))}` + (a.early ? ` · ${dur(a.early)} before expected` : '')
-    : `Expected out at ${hhmm(a.expected)} (${dur(a.hours)} day)`;
-}
-ATT_IDS.forEach(id => $(id).addEventListener('input', () => { saveAtt(); attSummary(); render(); }));
-const nowHHMM = () => hhmm(new Date().getHours() * 60 + new Date().getMinutes());
-$('attInNow').onclick = () => { $('attIn').value = nowHHMM(); saveAtt(); attSummary(); render(); };
-$('attOutNow').onclick = () => { $('attOut').value = nowHHMM(); saveAtt(); attSummary(); render(); };
-$('attOutClear').onclick = () => { $('attOut').value = ''; saveAtt(); attSummary(); render(); };
-attSummary();
-
-function drawAttend() {
-  if (todayKey() !== (JSON.parse(localStorage.getItem('kehadiran') || '{}').date || todayKey())) loadAtt();
-  const w = W(), h = H(), pad = Math.round(w * 0.045), a = attCalc();
-  const hasRed = palette().includes('red'), red = hasRed ? '#dc1e1e' : '#000';
-  // Header: black band, title in white, date in red (Malay day name)
-  const hh = Math.round(h * 0.17);
-  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, hh);
-  ctx.fillStyle = '#fff'; ctx.font = `bold ${Math.round(hh * 0.46)}px ${UI_FONT}`;
-  ctx.fillText('KEHADIRAN', pad, hh * 0.67);
-  const dateTxt = new Date().toLocaleDateString('ms-MY', { weekday: 'long', day: 'numeric', month: 'short' });
-  ctx.font = `bold ${Math.round(hh * 0.32)}px ${UI_FONT}`; ctx.fillStyle = hasRed ? red : '#fff'; ctx.textAlign = 'right';
-  ctx.fillText(dateTxt, w - pad - w * 0.05, hh * 0.65); ctx.textAlign = 'left';
-
-  const top = hh, fh = Math.round(h * 0.15), bottom = h - fh;
-  if (a.inM == null) {
-    ctx.fillStyle = '#000'; ctx.textAlign = 'center';
-    ctx.font = `bold ${Math.round(h * 0.11)}px ${UI_FONT}`; ctx.fillText('Belum masuk', w / 2, (top + bottom) / 2 + h * 0.02);
-    ctx.font = `${Math.round(h * 0.05)}px ${UI_FONT}`; ctx.fillText('(not clocked in yet)', w / 2, (top + bottom) / 2 + h * 0.1);
-    ctx.textAlign = 'left'; return;
+// The first time the hub is opened on a weekday morning (6 am–12 pm), that time is taken as clock-in.
+// Only on opening/returning to the page, never from the live-clock timer, so a laptop left on overnight doesn't guess.
+function autoClockIn() {
+  loadClockIn();
+  const n = new Date(), m = n.getHours() * 60 + n.getMinutes(), weekday = n.getDay() > 0 && n.getDay() < 6;
+  if ($('dashOutShow').checked && !$('dashIn').value && weekday && m >= 360 && m < 720) {
+    $('dashIn').value = hhmm(m); saveClockIn(); log(`Clock-in set to ${hhmm(m)} (first time the hub was opened today); change it on the Dashboard if needed`);
   }
-  // Two columns: MASUK | KELUAR
-  const colW = (w - pad * 2) / 2, labS = Math.round(h * 0.06), bigH = h * 0.24;
-  ctx.fillStyle = '#000'; ctx.fillRect(w / 2 - 1, top + pad, 2, bottom - top - pad * 2);
-  const col = (cx, label, labelCol, time, timeCol, tag, tagCol) => {
-    ctx.textAlign = 'center';
-    const fs = fitText(time, colW - pad, bigH, 'bold', NUM_FONT);
-    // centre label + time + tag row in the space between header and footer (same in both columns)
-    const block = labS * 1.4 + fs * 0.8 + labS * 2.2, y0 = top + (bottom - top - block) / 2;
-    ctx.fillStyle = labelCol; ctx.font = `bold ${labS}px ${UI_FONT}`; ctx.fillText(label, cx, y0 + labS);
-    ctx.font = `bold ${fs}px ${NUM_FONT}`; ctx.fillStyle = timeCol; ctx.fillText(time, cx, y0 + labS * 1.4 + fs * 0.8);
-    if (tag) {
-      ctx.font = `bold ${Math.round(labS * 0.9)}px ${UI_FONT}`;
-      const tw = ctx.measureText(tag).width + labS, ty = y0 + labS * 1.4 + fs * 0.8 + labS * 0.7;
-      if (tagCol !== '#000') { ctx.fillStyle = tagCol; ctx.fillRect(cx - tw / 2, ty, tw, labS * 1.35); ctx.fillStyle = '#fff'; }
-      else ctx.fillStyle = '#000';
-      ctx.fillText(tag, cx, ty + labS * 1.0);
-    }
-    ctx.textAlign = 'left';
-  };
-  col(pad + colW / 2, 'MASUK', '#000', hhmm(a.inM), '#000', a.late ? 'LEWAT' : '', red);
-  if (a.outM != null) col(w - pad - colW / 2, 'KELUAR', '#000', hhmm(a.outM), '#000', '✓ Selesai', '#000');
-  else col(w - pad - colW / 2, 'JANGKA KELUAR', red, hhmm(a.expected), red, '', '');
-
-  // Footer: hours worked, or the length of today's day
-  ctx.fillStyle = '#000'; ctx.fillRect(pad, bottom, w - pad * 2, 2);
-  ctx.font = `${Math.round(fh * 0.4)}px ${UI_FONT}`; ctx.textAlign = 'center';
-  const foot = a.outM != null
-    ? `Jumlah bekerja ${dur(Math.max(0, a.worked))}` + (a.early ? `  ·  awal ${dur(a.early)}` : '')
-    : `Waktu bekerja ${dur(a.hours)}${new Date().getDay() === 5 ? ' (Jumaat)' : ''}`;
-  ctx.fillText(foot, w / 2, bottom + fh * 0.66); ctx.textAlign = 'left';
+  clockOutNote(); render();
 }
+$('dashIn').addEventListener('input', () => { saveClockIn(); clockOutNote(); render(); });
+$('dashInNow').onclick = () => { const n = new Date(); $('dashIn').value = hhmm(n.getHours() * 60 + n.getMinutes()); saveClockIn(); clockOutNote(); render(); };
+try { $('dashOutShow').checked = localStorage.getItem('dashOutShow') !== '0'; } catch (_) {}
+$('dashOutShow').addEventListener('change', () => { try { localStorage.setItem('dashOutShow', $('dashOutShow').checked ? '1' : '0'); } catch (_) {} autoClockIn(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) autoClockIn(); });
 
-const APPS = { attend: drawAttend, away: drawAway, dashboard: drawDashboard, note: drawNote, quote: drawQuote, todo: drawTodo, draw: drawDraw, image: drawImage, gallery: drawGallery };
+const APPS = { away: drawAway, dashboard: drawDashboard, note: drawNote, quote: drawQuote, todo: drawTodo, draw: drawDraw, image: drawImage, gallery: drawGallery };
 function render() {
   // Grey cut-off: white-on-black layouts lean towards white so thin white strokes survive
   // Text apps: ~50% edges keep Verdana's shapes clean (same cut-off as the original site).
@@ -2331,7 +2251,7 @@ $('clearBtn').onclick = clearScreen;
 $('battBtn').onclick = checkBattery;
 $('cityBtn').onclick = loadWeather;
 // Browsers keep a copy of this page for ~10 minutes; check GitHub for a newer one and offer to update
-const APP_VERSION = '2026-11-16a';
+const APP_VERSION = '2026-11-16b';
 async function checkForUpdate() {
   try {
     const t = await (await fetch(location.pathname + '?check=' + Date.now(), { cache: 'no-store' })).text();
@@ -2341,6 +2261,7 @@ async function checkForUpdate() {
 }
 $('updateBtn').onclick = () => { location.href = location.pathname + '?v=' + Date.now(); };
 checkForUpdate(); setInterval(checkForUpdate, 30 * 60000);
+autoClockIn();
 $('clockBtn').onclick = builtinClock;
 try { const c = localStorage.getItem('dashClock'); if (c) $('dashClock').value = c; } catch (_) {}
 $('dashClock').onchange = () => {
