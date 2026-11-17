@@ -6,7 +6,7 @@ A small web app for e-ink screens running the [EPD-nRF5](https://github.com/tsl0
 
 ## Apps
 
-- **Dashboard**: date, clock, your clock-out time (worked out from your clock-in: 8–9 am → 9 hours later, after 9 → 6 pm), month calendar, weather and air quality for your city. The clock can update itself every 5 min to 1 hour while the laptop stays connected.
+- **Dashboard**: date, clock, your clock-out time (worked out from your clock-in: 8–9 am → 9 hours later, after 9 → 6 pm), month calendar, weather and air quality for your city..
 - **Note**: big auto-sized text, first line in red
 - **Away**: out-of-office card with status, "back at" time or date, message and contact line
 - **Quote**: 50 funny, 50 inspiring and 50 scientists' quotes, plus **My quotes** (your own, saved in your browser). Shuffled with no repeats, with Previous / Next
